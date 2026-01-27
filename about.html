@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>About Us | Provisions Unlimited</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+    <header>
+        <div class="container nav-container">
+            <div class="logo">
+                <a href="index.html">
+                    <img src="logo.png" alt="Provisions Unlimited Seal">
+                    <div class="logo-text-container">
+                        <span class="logo-text-large">PROVISIONS</span>
+                        <span class="logo-text-small">UNLIMITED</span>
+                    </div>
+                </a>
+            </div>
+            <nav>
+                <ul class="desktop-nav">
+                    <li><a href="index.html">Home</a></li>
+                    <li><a href="about.html">About</a></li>
+                    <li><a href="technology.html">Technology</a></li>
+                    <li><a href="infrastructure.html">Infrastructure</a></li>
+                    <li><a href="partners.html">Teaming</a></li>
+                    <li><a href="#contact" class="btn">Contact HQ</a></li>
+                </ul>
+                <div class="mobile-nav-toggle">
+                    <i class="fas fa-bars"></i>
+                </div>
+            </nav>
+        </div>
+        <div class="mobile-nav">
+            <ul>
+                <li><a href="index.html">Home</a></li>
+                <li><a href="about.html">About</a></li>
+                <li><a href="technology.html">Technology</a></li>
+                <li><a href="infrastructure.html">Infrastructure</a></li>
+                <li><a href="partners.html">Teaming</a></li>
+                <li><a href="#contact">Contact HQ</a></li>
+            </ul>
+        </div>
+    </header>
+
+    <section class="about-hero">
+        <div class="container">
+            <h4 class="subtitle">Service-Disabled Veteran-Owned</h4>
+            <h1>Defined By Service.</h1>
+            <p>We translate the discipline of military service into the precision of government contracting. From physical infrastructure to digital defense, we ensure the mission never stops.</p>
+        </div>
+    </section>
+
+    <section class="mission-philosophy">
+        <div class="container">
+            <div class="content-flex">
+                <div class="flex-item">
+                    <h2>The Mission Support Philosophy</h2>
+                    <p>Government agencies face a complex landscape where physical security and digital readiness are increasingly interconnected. A secure server room requires both robust cybersecurity policies and reliable HVAC infrastructure.</p>
+                    <p>Provisions Unlimited bridges this gap. We are a unified solutions provider that understands <strong>Total Operational Readiness</strong>. Whether we are managing a logistics convoy or architecting a Zero Trust cloud environment, our approach remains the same: <strong>Compliance, Accountability, and Speed.</strong></p>
+                </div>
+                <div class="flex-item core-values-card">
+                    <h4>Our Core Values</h4>
+                    <ul>
+                        <li><i class="fas fa-check-circle"></i> Integrity First</li>
+                        <li><i class="fas fa-check-circle"></i> Regulatory Compliance (FAR/VAAR)</li>
+                        <li><i class="fas fa-check-circle"></i> Operational Excellence</li>
+                        <li><i class="fas fa-check-circle"></i> Mission Continuity</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section class="executive-leadership">
+        <div class="container">
+            <h2 class="section-title">Executive Leadership</h2>
+            
+            <div class="leader-grid">
+                
+                <div class="leader-card">
+                    <div class="leader-header">
+                        <h3>John Sardine</h3>
+                        <p>President & CEO</p>
+                    </div>
+                    <div class="leader-body">
+                        <p><strong>Focus:</strong> Corporate Strategy, Regulatory Compliance, Agency Relations</p>
+                        <hr>
+                        <p>
+                            John brings over 21 years of distinguished service in the U.S. Marine Corps to the federal marketplace. As a Battalion Antiterrorism Officer and Career Retention Specialist, he mastered the art of managing large-scale government assets and personnel in high-risk environments.<br><br>
+                            At Provisions Unlimited, John acts as the "Regulatory Shield," ensuring every contract is executed with strict adherence to FAR, VAAR, and agency directives. He manages prime relationships with the Department of Veterans Affairs and Department of Transportation.
+                        </p>
+                    </div>
+                </div>
+
+                <div class="leader-card">
+                    <div class="leader-header">
+                        <h3>Christopher Sardine</h3>
+                        <p>Technical Director</p>
+                    </div>
+                    <div class="leader-body">
+                        <p><strong>Focus:</strong> Enterprise Architecture, Cloud Security, Systems Integration</p>
+                        <hr>
+                        <p>
+                            Chris provides the technical vision for Provisions Unlimited's Advanced Technology Division. Holding a B.S. in Information Sciences & Technology from Penn State and active DoD 8570 certifications, he specializes in modernizing legacy government systems.<br><br>
+                            His past performance includes serving as the Lead Technical Integrator for the Pennsylvania State Capitol Complex security modernization, overseeing the identity migration of 100,000+ users and the architecture of a Zero Trust access control network.
+                        </p>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+    </section>
+
+    <footer class="site-footer-dark">
+        <div class="container">
+            <p>&copy; 2026 Provisions Unlimited. <a href="index.html">Return to HQ</a></p>
+        </div>
+    </footer>
+
+    <script>
+        const mobileNavToggle = document.querySelector('.mobile-nav-toggle');
+        const mobileNav = document.querySelector('.mobile-nav');
+
+        mobileNavToggle.addEventListener('click', () => {
+            mobileNav.classList.toggle('active');
+        });
+    </script>
+
+</body>
+</html>
