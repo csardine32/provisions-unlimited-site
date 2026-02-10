@@ -1,5 +1,5 @@
 {
-  "redirects": [
-    { "source": "/dashboard", "destination": "https://dashboard.provisionsunlimited.net/dashboard", "permanent": false }
+  "rewrites": [
+    { "source": "/dashboard", "destination": "/dashboard.html" }
   ]
 }
