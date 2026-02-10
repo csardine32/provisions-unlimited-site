@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="format-detection" content="telephone=no" />
+    <title>Deadline Dashboard | Provisions Unlimited</title>
+    <link
+      rel="stylesheet"
+      href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"
+    />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700;800&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="style.css" />
+    <link rel="stylesheet" href="dashboard.css" />
+  </head>
+  <body>
+    <!-- ============ Login Overlay ============ -->
+    <div id="loginOverlay" class="login-overlay">
+      <div class="login-card">
+        <h1>PROVISIONS</h1>
+        <div class="login-subtitle">Deadline Dashboard</div>
+        <div id="loginError" class="login-error"></div>
+        <button type="button" class="login-btn" id="googleLoginBtn" style="display: flex; align-items: center; justify-content: center; gap: 10px; background: var(--white); color: var(--text-dark); border: 1px solid #e5e7eb; margin-bottom: 20px;">
+          <svg width="18" height="18" viewBox="0 0 48 48"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg>
+          Sign in with Google
+        </button>
+        <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 20px;">
+          <div style="flex: 1; height: 1px; background: #e5e7eb;"></div>
+          <span style="font-size: 0.8rem; color: #9ca3af; font-weight: 600;">OR</span>
+          <div style="flex: 1; height: 1px; background: #e5e7eb;"></div>
+        </div>
+        <form id="loginForm">
+          <input
+            type="email"
+            id="loginEmail"
+            placeholder="Email"
+            required
+            autocomplete="email"
+          />
+          <input
+            type="password"
+            id="loginPassword"
+            placeholder="Password"
+            required
+            autocomplete="current-password"
+          />
+          <button type="submit" class="login-btn" id="loginBtn">
+            Sign In with Email
+          </button>
+        </form>
+      </div>
+    </div>
+
+    <!-- ============ Dashboard App ============ -->
+    <div id="dashboardApp" class="dashboard-app">
+      <!-- Top Bar -->
+      <div class="dash-topbar">
+        <div class="dash-topbar-left">
+          <div class="dash-logo">
+            PROVISIONS
+            <span>DEADLINE TRACKER</span>
+          </div>
+        </div>
+        <div class="dash-topbar-right">
+          <span class="dash-user" id="currentUser"></span>
+          <button class="dash-logout" id="logoutBtn">Sign Out</button>
+        </div>
+      </div>
+
+      <!-- Urgency Strip -->
+      <div class="urgency-strip">
+        <div class="urgency-box overdue">
+          <div class="urgency-count" id="countOverdue">0</div>
+          <div class="urgency-label">Overdue</div>
+        </div>
+        <div class="urgency-box due-7">
+          <div class="urgency-count" id="countDue7">0</div>
+          <div class="urgency-label">Due &lt;7 Days</div>
+        </div>
+        <div class="urgency-box due-14">
+          <div class="urgency-count" id="countDue14">0</div>
+          <div class="urgency-label">Due &lt;14 Days</div>
+        </div>
+        <div class="urgency-box active-count">
+          <div class="urgency-count" id="countActive">0</div>
+          <div class="urgency-label">Active</div>
+        </div>
+      </div>
+
+      <!-- Toolbar -->
+      <div class="dash-toolbar">
+        <h2>Active Projects</h2>
+        <button class="add-project-btn" id="addProjectBtn">
+          <i class="fas fa-plus"></i> Add Project
+        </button>
+      </div>
+
+      <!-- Project Cards -->
+      <div class="projects-grid" id="projectsGrid">
+        <div class="loading-spinner" id="loadingSpinner"></div>
+      </div>
+    </div>
+
+    <!-- ============ Add/Edit Modal ============ -->
+    <div class="modal-overlay" id="modalOverlay">
+      <div class="modal">
+        <div class="modal-header">
+          <h2 id="modalTitle">Add Project</h2>
+          <button class="modal-close" id="modalClose">&times;</button>
+        </div>
+        <div class="modal-body">
+          <form id="projectForm">
+            <input type="hidden" id="formProjectId" />
+
+            <div class="form-group">
+              <label for="formTitle">Project Title *</label>
+              <input type="text" id="formTitle" required placeholder="e.g., Allentown OPC IOT&A" />
+            </div>
+
+            <div class="form-row">
+              <div class="form-group">
+                <label for="formAgency">Agency</label>
+                <input type="text" id="formAgency" placeholder="e.g., VA, DOD" />
+              </div>
+              <div class="form-group">
+                <label for="formSolicitation">Solicitation #</label>
+                <input type="text" id="formSolicitation" placeholder="e.g., 36C24425R0037" />
+              </div>
+            </div>
+
+            <div class="form-row">
+              <div class="form-group">
+                <label for="formDeadline">Response Deadline *</label>
+                <input type="datetime-local" id="formDeadline" required />
+              </div>
+              <div class="form-group">
+                <label for="formOwner">Owner</label>
+                <select id="formOwner">
+                  <option value="Chris">Chris</option>
+                  <option value="John">John</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="form-row">
+              <div class="form-group">
+                <label for="formPriority">Priority</label>
+                <select id="formPriority">
+                  <option value="normal">Normal</option>
+                  <option value="high">High</option>
+                  <option value="critical">Critical</option>
+                  <option value="low">Low</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label for="formEstValue">Estimated Value</label>
+                <input type="text" id="formEstValue" placeholder="e.g., $500K" />
+              </div>
+            </div>
+
+            <div class="form-row">
+              <div class="form-group">
+                <label for="formNaics">NAICS Code</label>
+                <input type="text" id="formNaics" placeholder="e.g., 541512" />
+              </div>
+              <div class="form-group">
+                <label for="formSetAside">Set-Aside</label>
+                <input type="text" id="formSetAside" placeholder="e.g., SDVOSB" />
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label for="formSamLink">SAM.gov Link</label>
+              <input type="url" id="formSamLink" placeholder="https://sam.gov/opp/..." />
+            </div>
+
+            <div class="form-group">
+              <label for="formNotes">Notes</label>
+              <textarea id="formNotes" placeholder="Key details, teaming partners, strategy notes..."></textarea>
+            </div>
+          </form>
+
+          <!-- Milestones section (shown when editing) -->
+          <div id="milestonesSection" style="display: none;">
+            <h3 style="font-size: 0.95rem; font-weight: 700; color: var(--primary-navy); margin: 20px 0 12px; padding-top: 16px; border-top: 1px solid #e5e7eb;">Milestones</h3>
+            <div id="milestonesEditor"></div>
+          </div>
+
+          <!-- Checklist section (shown when editing) -->
+          <div id="checklistSection" style="display: none;">
+            <h3 style="font-size: 0.95rem; font-weight: 700; color: var(--primary-navy); margin: 20px 0 12px; padding-top: 16px; border-top: 1px solid #e5e7eb;">Document Checklist</h3>
+            <div id="checklistEditor"></div>
+            <div style="margin-top: 8px;">
+              <input type="text" id="newChecklistItem" placeholder="Add checklist item..." style="width: calc(100% - 80px); padding: 8px 12px; border: 1px solid #e5e7eb; border-radius: 4px; font-size: 0.85rem; font-family: 'Inter', sans-serif;" />
+              <button type="button" id="addChecklistBtn" style="padding: 8px 16px; background: var(--primary-navy); color: white; border: none; border-radius: 4px; font-size: 0.85rem; font-weight: 600; cursor: pointer; font-family: 'Inter', sans-serif; vertical-align: top;">Add</button>
+            </div>
+          </div>
+
+          <!-- Delete section (shown when editing) -->
+          <div id="deleteSection" style="display: none; margin-top: 24px;">
+            <div class="delete-confirm">
+              <p><strong>Archive this project?</strong> It will be hidden from the dashboard.</p>
+              <button type="button" class="btn-danger" id="archiveBtn">
+                <i class="fas fa-archive"></i> Archive Project
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div class="modal-footer">
+          <button type="button" class="btn-secondary" id="modalCancel">Cancel</button>
+          <button type="button" class="btn-primary" id="modalSave">Save Project</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Supabase SDK -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+    <script src="dashboard.js"></script>
+  </body>
+</html>
