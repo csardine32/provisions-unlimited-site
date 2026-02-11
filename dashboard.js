@@ -1217,19 +1217,183 @@ function renderDDMustCheck(opp) {
 }
 
 function renderDDAttachments(opp) {
-  if (!opp.ai_attachment_summary) {
+  // If we already have a full analysis, render it
+  if (opp.attachment_analysis_json) {
+    return renderAttachmentAnalysis(opp);
+  }
+
+  // If resource links exist, show the analyze button
+  let resourceLinks = [];
+  if (opp.resource_links_json) {
+    try { resourceLinks = JSON.parse(opp.resource_links_json); } catch {}
+  }
+
+  if (resourceLinks.length > 0) {
+    const docCount = resourceLinks.length;
     return `
       <div class="deep-dive-section">
         <h3><i class="fas fa-paperclip"></i> Attachment Analysis</h3>
-        <div class="dd-empty-text">No attachment analysis available</div>
+        <div class="dd-analyze-container" id="ddAnalyzeContainer-${escapeHtml(opp.notice_id)}">
+          <button class="dd-analyze-btn" onclick="analyzeAttachment('${escapeHtml(opp.notice_id)}')">
+            <i class="fas fa-file-pdf"></i> Analyze ${docCount} Attachment${docCount > 1 ? 's' : ''}
+          </button>
+          <div class="dd-analyze-hint">Downloads solicitation docs from SAM.gov and runs AI analysis</div>
+        </div>
       </div>`;
   }
+
   return `
     <div class="deep-dive-section">
       <h3><i class="fas fa-paperclip"></i> Attachment Analysis</h3>
-      <div class="dd-attachment-summary">${escapeHtml(opp.ai_attachment_summary)}</div>
+      <div class="dd-empty-text">No attachments available on SAM.gov</div>
     </div>`;
 }
+
+function renderAttachmentAnalysis(opp) {
+  let analysis;
+  try {
+    analysis = typeof opp.attachment_analysis_json === 'string'
+      ? JSON.parse(opp.attachment_analysis_json)
+      : opp.attachment_analysis_json;
+  } catch {
+    return `
+      <div class="deep-dive-section">
+        <h3><i class="fas fa-paperclip"></i> Attachment Analysis</h3>
+        <div class="dd-empty-text">Analysis data could not be parsed</div>
+      </div>`;
+  }
+
+  // If it's a raw_analysis fallback, show as text
+  if (analysis.raw_analysis) {
+    return `
+      <div class="deep-dive-section">
+        <h3><i class="fas fa-paperclip"></i> Attachment Analysis</h3>
+        <div class="dd-attachment-summary">${escapeHtml(analysis.raw_analysis)}</div>
+      </div>`;
+  }
+
+  let html = '<div class="deep-dive-section"><h3><i class="fas fa-paperclip"></i> Attachment Analysis</h3>';
+
+  if (analysis.scope_of_work) {
+    html += `<div class="dd-analysis-block">
+      <div class="dd-analysis-label"><i class="fas fa-bullseye"></i> Scope of Work</div>
+      <p class="dd-analysis-text">${escapeHtml(analysis.scope_of_work)}</p>
+    </div>`;
+  }
+
+  if (Array.isArray(analysis.key_requirements) && analysis.key_requirements.length) {
+    html += `<div class="dd-analysis-block">
+      <div class="dd-analysis-label"><i class="fas fa-list-check"></i> Key Requirements</div>
+      <ul class="dd-analysis-list">${analysis.key_requirements.map(r => `<li>${escapeHtml(String(r))}</li>`).join('')}</ul>
+    </div>`;
+  }
+
+  if (Array.isArray(analysis.required_qualifications) && analysis.required_qualifications.length) {
+    html += `<div class="dd-analysis-block">
+      <div class="dd-analysis-label"><i class="fas fa-certificate"></i> Required Qualifications</div>
+      <ul class="dd-analysis-list">${analysis.required_qualifications.map(r => `<li>${escapeHtml(String(r))}</li>`).join('')}</ul>
+    </div>`;
+  }
+
+  if (analysis.period_of_performance) {
+    html += `<div class="dd-analysis-block">
+      <div class="dd-analysis-label"><i class="fas fa-clock"></i> Period of Performance</div>
+      <p class="dd-analysis-text">${escapeHtml(analysis.period_of_performance)}</p>
+    </div>`;
+  }
+
+  if (Array.isArray(analysis.evaluation_criteria) && analysis.evaluation_criteria.length) {
+    html += `<div class="dd-analysis-block">
+      <div class="dd-analysis-label"><i class="fas fa-scale-balanced"></i> Evaluation Criteria</div>
+      <ul class="dd-analysis-list">${analysis.evaluation_criteria.map(r => `<li>${escapeHtml(String(r))}</li>`).join('')}</ul>
+    </div>`;
+  }
+
+  if (Array.isArray(analysis.compliance_requirements) && analysis.compliance_requirements.length) {
+    html += `<div class="dd-analysis-block">
+      <div class="dd-analysis-label"><i class="fas fa-shield-halved"></i> Compliance Requirements</div>
+      <ul class="dd-analysis-list">${analysis.compliance_requirements.map(r => `<li>${escapeHtml(String(r))}</li>`).join('')}</ul>
+    </div>`;
+  }
+
+  if (Array.isArray(analysis.red_flags) && analysis.red_flags.length) {
+    html += `<div class="dd-analysis-block dd-analysis-red-flags">
+      <div class="dd-analysis-label"><i class="fas fa-triangle-exclamation"></i> Red Flags / Concerns</div>
+      <ul class="dd-analysis-list dd-red-flag-list">${analysis.red_flags.map(r => `<li>${escapeHtml(String(r))}</li>`).join('')}</ul>
+    </div>`;
+  }
+
+  if (analysis.bid_readiness) {
+    html += `<div class="dd-analysis-block">
+      <div class="dd-analysis-label"><i class="fas fa-rocket"></i> Bid Readiness Assessment</div>
+      <p class="dd-analysis-text">${escapeHtml(analysis.bid_readiness)}</p>
+    </div>`;
+  }
+
+  html += '</div>';
+  return html;
+}
+
+async function analyzeAttachment(noticeId) {
+  const container = document.getElementById('ddAnalyzeContainer-' + noticeId);
+  if (!container) return;
+
+  // Show loading state
+  container.innerHTML = `
+    <button class="dd-analyze-btn dd-analyze-loading" disabled>
+      <span class="dd-analyze-spinner"></span> Analyzing...
+    </button>
+    <div class="dd-analyze-hint">Downloading and analyzing solicitation docs — this may take 15-30 seconds</div>`;
+
+  try {
+    const response = await fetch(`${SUPABASE_URL}/functions/v1/analyze-attachment`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${(await sb.auth.getSession()).data.session?.access_token}`,
+      },
+      body: JSON.stringify({ notice_id: noticeId }),
+    });
+
+    const result = await response.json();
+
+    if (!response.ok) {
+      container.innerHTML = `
+        <div class="dd-analyze-error">
+          <i class="fas fa-exclamation-circle"></i> ${escapeHtml(result.error || 'Analysis failed')}
+        </div>
+        <button class="dd-analyze-btn" onclick="analyzeAttachment('${escapeHtml(noticeId)}')" style="margin-top: 8px;">
+          <i class="fas fa-redo"></i> Retry
+        </button>`;
+      return;
+    }
+
+    // Cache in local state so re-opening doesn't re-fetch
+    const opp = allOpportunities.find(o => o.notice_id === noticeId);
+    if (opp) {
+      opp.attachment_analysis_json = JSON.stringify(result.analysis);
+      opp.attachment_analyzed_at = result.analyzed_at;
+    }
+
+    // Re-render the entire section
+    const section = container.closest('.deep-dive-section');
+    if (section) {
+      const tempOpp = { ...opp, attachment_analysis_json: JSON.stringify(result.analysis) };
+      section.outerHTML = renderAttachmentAnalysis(tempOpp);
+    }
+  } catch (err) {
+    console.error('Attachment analysis failed:', err);
+    container.innerHTML = `
+      <div class="dd-analyze-error">
+        <i class="fas fa-exclamation-circle"></i> Network error — check your connection
+      </div>
+      <button class="dd-analyze-btn" onclick="analyzeAttachment('${escapeHtml(noticeId)}')" style="margin-top: 8px;">
+        <i class="fas fa-redo"></i> Retry
+      </button>`;
+  }
+}
+
+window.analyzeAttachment = analyzeAttachment;
 
 function renderDDDescription(opp) {
   if (!opp.description_excerpt) return '';
