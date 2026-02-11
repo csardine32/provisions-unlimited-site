@@ -25,6 +25,10 @@ let countdownInterval = null;
 let currentView = null;
 let scannerInitialized = false;
 let projectsInitialized = false;
+let adhocAnalyses = [];
+let adhocInitialized = false;
+let showAllAdhoc = false;
+let pendingAdhocId = null;
 
 // --- Standard milestone template (days before deadline) ---
 const MILESTONE_TEMPLATE = [
@@ -102,6 +106,10 @@ function showLogin() {
   currentView = null;
   scannerInitialized = false;
   projectsInitialized = false;
+  adhocInitialized = false;
+  adhocAnalyses = [];
+  showAllAdhoc = false;
+  pendingAdhocId = null;
 }
 
 async function showDashboard() {
@@ -213,6 +221,9 @@ function setupRealtimeSubscriptions() {
     })
     .on('postgres_changes', { event: '*', schema: 'public', table: 'opportunity_dismissals' }, () => {
       loadUserDismissals().then(() => loadTopOpportunities());
+    })
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'adhoc_analyses' }, () => {
+      if (adhocInitialized) loadAdhocAnalyses();
     })
     .subscribe();
 }
@@ -551,6 +562,7 @@ $('addChecklistBtn').addEventListener('click', async () => {
 function closeModal() {
   modalOverlay.classList.remove('visible');
   editingProjectId = null;
+  pendingAdhocId = null;
 }
 
 modalClose.addEventListener('click', closeModal);
@@ -638,6 +650,16 @@ modalSave.addEventListener('click', async () => {
     if (cError) console.error('Failed to create checklist:', cError);
 
     await logActivity(data.id, 'Project created');
+
+    // Link adhoc analysis if this was a "pursue unmatched" flow
+    if (pendingAdhocId) {
+      await sb.from('adhoc_analyses').update({
+        status: 'pursued',
+        project_id: data.id,
+      }).eq('id', pendingAdhocId);
+      pendingAdhocId = null;
+      loadAdhocAnalyses();
+    }
   }
 
   closeModal();
@@ -1594,6 +1616,11 @@ function initAnalyzeView() {
     if (fileInput.files[0]) handleAdHocFile(fileInput.files[0]);
     fileInput.value = '';
   });
+
+  if (!adhocInitialized) {
+    adhocInitialized = true;
+    loadAdhocAnalyses();
+  }
 }
 
 const TEXT_EXTENSIONS = ['.txt', '.csv', '.md', '.json', '.xml', '.tsv', '.log'];
@@ -1659,12 +1686,17 @@ async function handleAdHocFile(file) {
     if (!response.ok) throw new Error(result.error || 'Analysis failed');
 
     const fakeOpp = { attachment_analysis_json: JSON.stringify(result.analysis) };
+    const matchHtml = result.matched_opportunity
+      ? `<span class="adhoc-match-badge"><i class="fas fa-link"></i> Matched: ${escapeHtml(result.matched_opportunity.title || result.matched_opportunity.notice_id)}</span>`
+      : '';
     resultDiv.innerHTML = `
       <div class="analyze-result-header">
         <i class="fas fa-check-circle" style="color:#10b981;"></i>
         <strong>${escapeHtml(file.name)}</strong>
+        ${matchHtml}
       </div>
       ${renderAttachmentAnalysis(fakeOpp)}`;
+    loadAdhocAnalyses();
   } catch (err) {
     resultDiv.innerHTML = `
       <div class="dd-analyze-error">
@@ -1707,6 +1739,206 @@ async function handleZipFile(file) {
   }
   throw new Error('No supported files found inside ZIP');
 }
+
+// ============================================================
+// Recent Adhoc Analyses
+// ============================================================
+
+async function loadAdhocAnalyses() {
+  const { data, error } = await sb
+    .from('adhoc_analyses')
+    .select('*')
+    .eq('user_id', currentUser.id)
+    .order('analyzed_at', { ascending: false })
+    .limit(50);
+
+  if (error) {
+    console.error('Failed to load adhoc analyses:', error);
+    return;
+  }
+
+  adhocAnalyses = data || [];
+  renderAdhocAnalysesList();
+}
+
+function renderAdhocAnalysesList() {
+  const container = $('recentAnalyses');
+  if (!container) return;
+
+  const active = adhocAnalyses.filter(a => a.status === 'active');
+  const dismissed = adhocAnalyses.filter(a => a.status === 'dismissed');
+  const pursued = adhocAnalyses.filter(a => a.status === 'pursued');
+  const visibleItems = showAllAdhoc ? [...active, ...pursued, ...dismissed] : [...active, ...pursued];
+
+  if (adhocAnalyses.length === 0) {
+    container.innerHTML = '';
+    return;
+  }
+
+  const rows = visibleItems.map(a => {
+    const displayTitle = a.title || a.filename;
+    const dateStr = new Date(a.analyzed_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+    const isDismissed = a.status === 'dismissed';
+    const isPursued = a.status === 'pursued';
+
+    const matchBadge = a.matched_notice_id
+      ? `<span class="adhoc-match-badge"><i class="fas fa-link"></i> Linked</span>`
+      : `<span class="adhoc-no-match-badge"><i class="fas fa-unlink"></i> No match</span>`;
+
+    let actionsHtml = '';
+    if (isDismissed) {
+      actionsHtml = `<button class="adhoc-action-btn adhoc-undo-btn" onclick="undismissAdhocAnalysis('${a.id}')" title="Restore"><i class="fas fa-undo"></i></button>`;
+    } else if (isPursued) {
+      actionsHtml = `<span class="adhoc-pursued-badge"><i class="fas fa-check"></i> Pursued</span>`;
+    } else {
+      const pursueHandler = a.matched_notice_id
+        ? `pursueAdhocMatched('${a.id}', '${escapeHtml(a.matched_notice_id)}')`
+        : `pursueAdhocUnmatched('${a.id}')`;
+      actionsHtml = `
+        <button class="adhoc-action-btn adhoc-pursue-btn" onclick="event.stopPropagation(); ${pursueHandler}" title="Pursue"><i class="fas fa-rocket"></i></button>
+        <button class="adhoc-action-btn adhoc-dismiss-btn" onclick="event.stopPropagation(); dismissAdhocAnalysis('${a.id}')" title="Dismiss"><i class="fas fa-times"></i></button>`;
+    }
+
+    return `
+      <div class="adhoc-row${isDismissed ? ' adhoc-dismissed' : ''}" onclick="viewAdhocAnalysis('${a.id}')">
+        <div class="adhoc-row-info">
+          <div class="adhoc-row-title">${escapeHtml(displayTitle)}</div>
+          <div class="adhoc-row-meta">
+            <span>${escapeHtml(a.filename)}</span>
+            <span>${dateStr}</span>
+            ${matchBadge}
+          </div>
+        </div>
+        <div class="adhoc-row-actions">
+          ${actionsHtml}
+        </div>
+      </div>`;
+  }).join('');
+
+  const dismissedLinkHtml = !showAllAdhoc && dismissed.length > 0
+    ? `<div class="adhoc-dismissed-link"><a href="#" onclick="showDismissedAnalyses(event)">Show ${dismissed.length} dismissed</a></div>`
+    : showAllAdhoc && dismissed.length > 0
+      ? `<div class="adhoc-dismissed-link"><a href="#" onclick="showDismissedAnalyses(event)">Hide dismissed</a></div>`
+      : '';
+
+  container.innerHTML = `
+    <div class="adhoc-recent-header">
+      <h3>Recent Analyses</h3>
+      <span class="adhoc-count-badge">${active.length + pursued.length}</span>
+    </div>
+    <div class="adhoc-list">
+      ${rows || '<div style="padding:24px;text-align:center;color:#9ca3af;">No analyses yet</div>'}
+    </div>
+    ${dismissedLinkHtml}`;
+}
+
+function viewAdhocAnalysis(id) {
+  const analysis = adhocAnalyses.find(a => a.id === id);
+  if (!analysis) return;
+
+  const resultDiv = $('analyzeResult');
+  let parsed;
+  try {
+    parsed = JSON.parse(analysis.analysis_json);
+  } catch {
+    parsed = { raw_analysis: analysis.analysis_json };
+  }
+
+  const fakeOpp = { attachment_analysis_json: JSON.stringify(parsed) };
+  const matchHtml = analysis.matched_notice_id
+    ? `<span class="adhoc-match-badge"><i class="fas fa-link"></i> Linked to scanner opportunity</span>`
+    : '';
+
+  resultDiv.innerHTML = `
+    <div class="analyze-result-header">
+      <i class="fas fa-check-circle" style="color:#10b981;"></i>
+      <strong>${escapeHtml(analysis.title || analysis.filename)}</strong>
+      ${matchHtml}
+    </div>
+    ${renderAttachmentAnalysis(fakeOpp)}`;
+}
+
+async function dismissAdhocAnalysis(id) {
+  const { error } = await sb.from('adhoc_analyses').update({ status: 'dismissed' }).eq('id', id);
+  if (error) {
+    console.error('Failed to dismiss analysis:', error);
+    return;
+  }
+  const item = adhocAnalyses.find(a => a.id === id);
+  if (item) item.status = 'dismissed';
+  renderAdhocAnalysesList();
+  showDDToast('Analysis dismissed');
+}
+
+async function undismissAdhocAnalysis(id) {
+  const { error } = await sb.from('adhoc_analyses').update({ status: 'active' }).eq('id', id);
+  if (error) {
+    console.error('Failed to restore analysis:', error);
+    return;
+  }
+  const item = adhocAnalyses.find(a => a.id === id);
+  if (item) item.status = 'active';
+  renderAdhocAnalysesList();
+  showDDToast('Analysis restored');
+}
+
+async function pursueAdhocMatched(id, noticeId) {
+  await trackOpportunity(noticeId);
+
+  // Find the newly created project to link
+  const tracked = projects.find(p => p.notice_id === noticeId);
+  const updates = { status: 'pursued' };
+  if (tracked) updates.project_id = tracked.id;
+
+  await sb.from('adhoc_analyses').update(updates).eq('id', id);
+  const item = adhocAnalyses.find(a => a.id === id);
+  if (item) item.status = 'pursued';
+  renderAdhocAnalysesList();
+}
+
+function pursueAdhocUnmatched(id) {
+  const analysis = adhocAnalyses.find(a => a.id === id);
+  if (!analysis) return;
+
+  let parsed;
+  try { parsed = JSON.parse(analysis.analysis_json); } catch { parsed = {}; }
+
+  // Pre-fill the Add Project modal
+  pendingAdhocId = id;
+  editingProjectId = null;
+  modalTitle.textContent = 'Add Project';
+  projectForm.reset();
+  $('formProjectId').value = '';
+  $('formTitle').value = analysis.title || '';
+  $('formSolicitation').value = analysis.solicitation_number || '';
+  $('formOwner').value = 'Chris';
+  $('formPriority').value = 'normal';
+
+  // Build notes from analysis summary
+  const notesParts = [];
+  if (parsed.scope_of_work) notesParts.push('Scope: ' + parsed.scope_of_work);
+  if (parsed.bid_readiness) notesParts.push('Bid Readiness: ' + parsed.bid_readiness);
+  $('formNotes').value = notesParts.join('\n\n');
+
+  $('milestonesSection').style.display = 'none';
+  $('checklistSection').style.display = 'none';
+  $('deleteSection').style.display = 'none';
+  modalSave.textContent = 'Save Project';
+  modalOverlay.classList.add('visible');
+}
+
+function showDismissedAnalyses(e) {
+  e.preventDefault();
+  showAllAdhoc = !showAllAdhoc;
+  renderAdhocAnalysesList();
+}
+
+window.viewAdhocAnalysis = viewAdhocAnalysis;
+window.dismissAdhocAnalysis = dismissAdhocAnalysis;
+window.undismissAdhocAnalysis = undismissAdhocAnalysis;
+window.pursueAdhocMatched = pursueAdhocMatched;
+window.pursueAdhocUnmatched = pursueAdhocUnmatched;
+window.showDismissedAnalyses = showDismissedAnalyses;
 
 // Hash change listener
 window.addEventListener('hashchange', () => {
