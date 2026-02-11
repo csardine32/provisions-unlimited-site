@@ -798,13 +798,16 @@ async function loadTopOpportunities() {
 
   if (error) {
     console.error('Failed to load top opportunities:', error);
+    topOppsSection.style.display = 'block';
+    topOppsTableBody.innerHTML = `<tr><td colspan="8" style="text-align:center;padding:40px;color:var(--accent-red);font-weight:600;">Error loading opportunities: ${escapeHtml(error.message || 'Unknown error')}</td></tr>`;
     return;
   }
 
   allOpportunities = data || [];
 
   if (allOpportunities.length === 0) {
-    topOppsSection.style.display = 'none';
+    topOppsSection.style.display = 'block';
+    topOppsTableBody.innerHTML = '<tr><td colspan="8" style="text-align:center;padding:40px;color:#9ca3af;font-weight:600;">No opportunities found</td></tr>';
     return;
   }
 
@@ -1540,11 +1543,20 @@ function navigateTo(viewName) {
 }
 
 async function initScannerView() {
-  if (!scannerInitialized) {
-    await Promise.all([loadUserDismissals(), loadUserFeedback()]);
-    scannerInitialized = true;
+  // Show loading state immediately
+  topOppsSection.style.display = 'block';
+  topOppsTableBody.innerHTML = '<tr><td colspan="8" style="text-align:center;padding:40px;color:#9ca3af;font-weight:600;">Loading opportunities...</td></tr>';
+
+  try {
+    if (!scannerInitialized) {
+      await Promise.all([loadUserDismissals(), loadUserFeedback()]);
+      scannerInitialized = true;
+    }
+    await loadTopOpportunities();
+  } catch (err) {
+    console.error('[Scanner] initScannerView error:', err);
+    topOppsTableBody.innerHTML = `<tr><td colspan="8" style="text-align:center;padding:40px;color:var(--accent-red);font-weight:600;">Failed to load opportunities. Check console for details.</td></tr>`;
   }
-  await loadTopOpportunities();
 }
 
 async function initProjectsView() {
