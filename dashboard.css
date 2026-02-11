@@ -154,10 +154,9 @@
 .view { display: none; }
 .view.active { display: block; }
 
-/* Role-based visibility */
-.admin-only { display: none !important; }
-body.is-admin .admin-only { display: block !important; }
-body.is-admin .sidebar-section.admin-only { display: block !important; }
+/* Role-based visibility (sidebar nav items only) */
+.admin-only { display: none; }
+body.is-admin .admin-only { display: block; }
 
 /* Top bar */
 .dash-topbar {

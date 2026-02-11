@@ -14,7 +14,7 @@
       rel="stylesheet"
     />
     <link rel="stylesheet" href="style.css" />
-    <link rel="stylesheet" href="dashboard.css?v=8" />
+    <link rel="stylesheet" href="dashboard.css?v=9" />
   </head>
   <body>
     <!-- ============ Login Overlay ============ -->
@@ -165,8 +165,8 @@
             </div>
           </div>
 
-          <!-- Analyze View (admin only) -->
-          <div class="view admin-only" id="viewAnalyze">
+          <!-- Analyze View (admin only — access controlled by JS router) -->
+          <div class="view" id="viewAnalyze">
             <div class="analyze-header">
               <h2>Ad-Hoc Document Analysis</h2>
               <p>Drop a solicitation PDF to get an instant AI briefing</p>
@@ -318,6 +318,6 @@
 
     <!-- Supabase SDK -->
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
-    <script src="dashboard.js?v=8"></script>
+    <script src="dashboard.js?v=9"></script>
   </body>
 </html>
