@@ -14,7 +14,7 @@
       rel="stylesheet"
     />
     <link rel="stylesheet" href="style.css" />
-    <link rel="stylesheet" href="dashboard.css?v=7" />
+    <link rel="stylesheet" href="dashboard.css?v=8" />
   </head>
   <body>
     <!-- ============ Login Overlay ============ -->
@@ -70,63 +70,125 @@
         </div>
       </div>
 
-      <!-- Urgency Strip -->
-      <div class="urgency-strip">
-        <div class="urgency-box overdue">
-          <div class="urgency-count" id="countOverdue">0</div>
-          <div class="urgency-label">Overdue</div>
-        </div>
-        <div class="urgency-box due-7">
-          <div class="urgency-count" id="countDue7">0</div>
-          <div class="urgency-label">Due &lt;7 Days</div>
-        </div>
-        <div class="urgency-box due-14">
-          <div class="urgency-count" id="countDue14">0</div>
-          <div class="urgency-label">Due &lt;14 Days</div>
-        </div>
-        <div class="urgency-box active-count">
-          <div class="urgency-count" id="countActive">0</div>
-          <div class="urgency-label">Active</div>
-        </div>
+      <!-- App Shell -->
+      <div class="app-shell">
+        <!-- Sidebar -->
+        <nav class="sidebar" id="sidebar">
+          <div class="sidebar-section">
+            <a href="#scanner" class="sidebar-link active" data-view="scanner">
+              <i class="fas fa-radar"></i><span>Scanner</span>
+            </a>
+            <a href="#projects" class="sidebar-link" data-view="projects">
+              <i class="fas fa-folder-open"></i><span>Projects</span>
+            </a>
+          </div>
+          <div class="sidebar-divider"></div>
+          <div class="sidebar-section admin-only">
+            <a href="#analyze" class="sidebar-link" data-view="analyze">
+              <i class="fas fa-file-upload"></i><span>Analyze</span>
+            </a>
+          </div>
+          <div class="sidebar-divider"></div>
+          <div class="sidebar-section">
+            <a class="sidebar-link disabled" title="Coming Soon">
+              <i class="fas fa-stream"></i><span>Pipeline</span>
+            </a>
+            <a class="sidebar-link disabled" title="Coming Soon">
+              <i class="fas fa-chart-line"></i><span>Reports</span>
+            </a>
+            <a class="sidebar-link disabled" title="Coming Soon">
+              <i class="fas fa-chart-pie"></i><span>Analytics</span>
+            </a>
+          </div>
+        </nav>
+
+        <!-- Main Content -->
+        <main class="main-content" id="mainContent">
+          <!-- Scanner View -->
+          <div class="view active" id="viewScanner">
+            <div class="top-opps-section" id="topOppsSection" style="display: none;">
+              <div class="top-opps-header" id="topOppsToggle">
+                <h2><i class="fas fa-radar" style="margin-right: 8px; font-size: 1rem;"></i>Top Opportunities <span class="top-opps-count" id="topOppsCount"></span></h2>
+                <i class="fas fa-chevron-down top-opps-chevron" id="topOppsChevron"></i>
+              </div>
+              <div class="top-opps-body" id="topOppsBody">
+                <table class="top-opps-table">
+                  <thead>
+                    <tr>
+                      <th>Score</th>
+                      <th>Opportunity</th>
+                      <th>Agency</th>
+                      <th>Value</th>
+                      <th>Deadline</th>
+                      <th>Set-Aside</th>
+                      <th></th>
+                      <th></th>
+                    </tr>
+                  </thead>
+                  <tbody id="topOppsTableBody"></tbody>
+                </table>
+                <div class="top-opps-dismissed-link" id="dismissedLink" style="display: none;"></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Projects View -->
+          <div class="view" id="viewProjects">
+            <div class="urgency-strip">
+              <div class="urgency-box overdue">
+                <div class="urgency-count" id="countOverdue">0</div>
+                <div class="urgency-label">Overdue</div>
+              </div>
+              <div class="urgency-box due-7">
+                <div class="urgency-count" id="countDue7">0</div>
+                <div class="urgency-label">Due &lt;7 Days</div>
+              </div>
+              <div class="urgency-box due-14">
+                <div class="urgency-count" id="countDue14">0</div>
+                <div class="urgency-label">Due &lt;14 Days</div>
+              </div>
+              <div class="urgency-box active-count">
+                <div class="urgency-count" id="countActive">0</div>
+                <div class="urgency-label">Active</div>
+              </div>
+            </div>
+
+            <div class="dash-toolbar">
+              <h2>Active Projects</h2>
+              <button class="add-project-btn" id="addProjectBtn">
+                <i class="fas fa-plus"></i> Add Project
+              </button>
+            </div>
+
+            <div class="projects-grid" id="projectsGrid">
+              <div class="loading-spinner" id="loadingSpinner"></div>
+            </div>
+          </div>
+
+          <!-- Analyze View (admin only) -->
+          <div class="view admin-only" id="viewAnalyze">
+            <div class="analyze-header">
+              <h2>Ad-Hoc Document Analysis</h2>
+              <p>Drop a solicitation PDF to get an instant AI briefing</p>
+            </div>
+            <div class="drop-zone" id="dropZone">
+              <i class="fas fa-cloud-upload-alt"></i>
+              <span>Drag & drop PDF here, or click to browse</span>
+              <input type="file" id="fileInput" accept=".pdf" hidden />
+            </div>
+            <div id="analyzeResult"></div>
+          </div>
+        </main>
       </div>
 
-      <!-- Top Opportunities Widget -->
-      <div class="top-opps-section" id="topOppsSection" style="display: none;">
-        <div class="top-opps-header" id="topOppsToggle">
-          <h2><i class="fas fa-radar" style="margin-right: 8px; font-size: 1rem;"></i>Top Opportunities <span class="top-opps-count" id="topOppsCount"></span></h2>
-          <i class="fas fa-chevron-down top-opps-chevron" id="topOppsChevron"></i>
-        </div>
-        <div class="top-opps-body" id="topOppsBody">
-          <table class="top-opps-table">
-            <thead>
-              <tr>
-                <th>Score</th>
-                <th>Opportunity</th>
-                <th>Agency</th>
-                <th>Value</th>
-                <th>Deadline</th>
-                <th>Set-Aside</th>
-                <th></th>
-                <th></th>
-              </tr>
-            </thead>
-            <tbody id="topOppsTableBody"></tbody>
-          </table>
-          <div class="top-opps-dismissed-link" id="dismissedLink" style="display: none;"></div>
-        </div>
-      </div>
-
-      <!-- Toolbar -->
-      <div class="dash-toolbar">
-        <h2>Active Projects</h2>
-        <button class="add-project-btn" id="addProjectBtn">
-          <i class="fas fa-plus"></i> Add Project
-        </button>
-      </div>
-
-      <!-- Project Cards -->
-      <div class="projects-grid" id="projectsGrid">
-        <div class="loading-spinner" id="loadingSpinner"></div>
+      <!-- Mobile Bottom Nav -->
+      <div class="mobile-nav-bar">
+        <a href="#scanner" class="mobile-nav-btn active" data-view="scanner">
+          <i class="fas fa-radar"></i>Scanner
+        </a>
+        <a href="#projects" class="mobile-nav-btn" data-view="projects">
+          <i class="fas fa-folder-open"></i>Projects
+        </a>
       </div>
     </div>
 
@@ -256,6 +318,6 @@
 
     <!-- Supabase SDK -->
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
-    <script src="dashboard.js?v=7"></script>
+    <script src="dashboard.js?v=8"></script>
   </body>
 </html>

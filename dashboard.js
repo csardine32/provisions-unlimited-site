@@ -22,6 +22,9 @@ let currentUser = null;
 let projects = [];
 let editingProjectId = null;
 let countdownInterval = null;
+let currentView = null;
+let scannerInitialized = false;
+let projectsInitialized = false;
 
 // --- Standard milestone template (days before deadline) ---
 const MILESTONE_TEMPLATE = [
@@ -95,17 +98,26 @@ function checkAuth() {
 function showLogin() {
   loginOverlay.style.display = 'flex';
   dashboardApp.classList.remove('visible');
+  document.body.classList.remove('is-admin');
+  currentView = null;
+  scannerInitialized = false;
+  projectsInitialized = false;
 }
 
 async function showDashboard() {
   loginOverlay.style.display = 'none';
   dashboardApp.classList.add('visible');
   currentUserEl.textContent = currentUser.email.split('@')[0];
-  await loadProjects();
-  await Promise.all([loadUserDismissals(), loadUserFeedback()]);
-  await loadTopOpportunities();
+
+  // Set admin role on body
+  document.body.classList.toggle('is-admin', isAdmin());
+
+  // Setup real-time subscriptions once
   setupRealtimeSubscriptions();
-  startCountdownTimer();
+
+  // Navigate to the hash route (defaults to scanner)
+  const hash = window.location.hash.slice(1) || 'scanner';
+  navigateTo(hash);
 }
 
 // Google OAuth login
@@ -1474,6 +1486,157 @@ if (topOppsTableBody) {
     }
   });
 }
+
+// ============================================================
+// View Router
+// ============================================================
+
+const views = {
+  scanner: { el: () => $('viewScanner'), init: initScannerView },
+  projects: { el: () => $('viewProjects'), init: initProjectsView },
+  analyze: { el: () => $('viewAnalyze'), init: initAnalyzeView, adminOnly: true },
+};
+
+function isAdmin() {
+  if (!currentUser) return false;
+  const email = (currentUser.email || '').toLowerCase();
+  return email.startsWith('chris');
+}
+
+function navigateTo(viewName) {
+  if (!views[viewName]) viewName = 'scanner';
+  if (views[viewName].adminOnly && !isAdmin()) viewName = 'scanner';
+
+  // Hide all views
+  document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+
+  // Deactivate all sidebar links
+  document.querySelectorAll('.sidebar-link').forEach(l => l.classList.remove('active'));
+
+  // Show target view
+  const view = views[viewName];
+  const el = view.el();
+  if (el) el.classList.add('active');
+
+  // Activate sidebar link
+  const link = document.querySelector(`.sidebar-link[data-view="${viewName}"]`);
+  if (link) link.classList.add('active');
+
+  // Update mobile nav
+  document.querySelectorAll('.mobile-nav-btn').forEach(b => {
+    b.classList.toggle('active', b.dataset.view === viewName);
+  });
+
+  // Update hash without triggering hashchange
+  if (window.location.hash.slice(1) !== viewName) {
+    history.replaceState(null, '', '#' + viewName);
+  }
+
+  // Initialize view if needed
+  if (view.init && currentView !== viewName) {
+    view.init();
+  }
+  currentView = viewName;
+}
+
+async function initScannerView() {
+  if (!scannerInitialized) {
+    await Promise.all([loadUserDismissals(), loadUserFeedback()]);
+    scannerInitialized = true;
+  }
+  await loadTopOpportunities();
+}
+
+async function initProjectsView() {
+  if (!projectsInitialized) {
+    projectsInitialized = true;
+  }
+  await loadProjects();
+  startCountdownTimer();
+}
+
+function initAnalyzeView() {
+  const dropZone = $('dropZone');
+  const fileInput = $('fileInput');
+
+  if (!dropZone || dropZone._initialized) return;
+  dropZone._initialized = true;
+
+  dropZone.addEventListener('click', () => fileInput.click());
+
+  dropZone.addEventListener('dragover', (e) => {
+    e.preventDefault();
+    dropZone.classList.add('drag-over');
+  });
+  dropZone.addEventListener('dragleave', () => {
+    dropZone.classList.remove('drag-over');
+  });
+  dropZone.addEventListener('drop', (e) => {
+    e.preventDefault();
+    dropZone.classList.remove('drag-over');
+    const file = e.dataTransfer.files[0];
+    if (file) handleAdHocFile(file);
+  });
+  fileInput.addEventListener('change', () => {
+    if (fileInput.files[0]) handleAdHocFile(fileInput.files[0]);
+    fileInput.value = '';
+  });
+}
+
+async function handleAdHocFile(file) {
+  if (!file.name.toLowerCase().endsWith('.pdf')) {
+    showDDToast('Only PDF files are supported');
+    return;
+  }
+
+  const resultDiv = $('analyzeResult');
+  resultDiv.innerHTML = `
+    <div class="analyze-loading">
+      <span class="dd-analyze-spinner"></span>
+      Analyzing ${escapeHtml(file.name)}... (15-30 seconds)
+    </div>`;
+
+  // Convert to base64
+  const arrayBuffer = await file.arrayBuffer();
+  const bytes = new Uint8Array(arrayBuffer);
+  let binary = '';
+  for (const b of bytes) binary += String.fromCharCode(b);
+  const base64 = btoa(binary);
+
+  try {
+    const response = await fetch(`${SUPABASE_URL}/functions/v1/analyze-adhoc`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${(await sb.auth.getSession()).data.session?.access_token}`,
+      },
+      body: JSON.stringify({ pdf_base64: base64, filename: file.name }),
+    });
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error || 'Analysis failed');
+
+    // Render using same renderAttachmentAnalysis format
+    const fakeOpp = { attachment_analysis_json: JSON.stringify(result.analysis) };
+    resultDiv.innerHTML = `
+      <div class="analyze-result-header">
+        <i class="fas fa-check-circle" style="color:#10b981;"></i>
+        <strong>${escapeHtml(file.name)}</strong>
+      </div>
+      ${renderAttachmentAnalysis(fakeOpp)}`;
+  } catch (err) {
+    resultDiv.innerHTML = `
+      <div class="dd-analyze-error">
+        <i class="fas fa-exclamation-circle"></i> ${escapeHtml(err.message)}
+      </div>`;
+  }
+}
+
+// Hash change listener
+window.addEventListener('hashchange', () => {
+  if (!currentUser) return;
+  const hash = window.location.hash.slice(1) || 'scanner';
+  navigateTo(hash);
+});
 
 // ============================================================
 // Utils
