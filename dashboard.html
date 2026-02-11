@@ -14,7 +14,7 @@
       rel="stylesheet"
     />
     <link rel="stylesheet" href="style.css" />
-    <link rel="stylesheet" href="dashboard.css?v=5" />
+    <link rel="stylesheet" href="dashboard.css?v=6" />
   </head>
   <body>
     <!-- ============ Login Overlay ============ -->
@@ -243,8 +243,19 @@
       </div>
     </div>
 
+    <!-- Deep Dive Panel -->
+    <div class="deep-dive-backdrop" id="deepDiveBackdrop"></div>
+    <div class="deep-dive-panel" id="deepDivePanel">
+      <div class="deep-dive-header">
+        <h2 id="deepDiveTitle"></h2>
+        <button class="deep-dive-close" id="deepDiveClose">&times;</button>
+      </div>
+      <div class="deep-dive-body" id="deepDiveBody"></div>
+      <div class="deep-dive-actions" id="deepDiveActions"></div>
+    </div>
+
     <!-- Supabase SDK -->
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
-    <script src="dashboard.js?v=5"></script>
+    <script src="dashboard.js?v=6"></script>
   </body>
 </html>

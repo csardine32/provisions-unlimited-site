@@ -1029,6 +1029,289 @@ async function trackOpportunity(noticeId) {
 window.trackOpportunity = trackOpportunity;
 
 // ============================================================
+// Deep Dive Slide-Out Panel
+// ============================================================
+
+const deepDivePanel = $('deepDivePanel');
+const deepDiveBackdrop = $('deepDiveBackdrop');
+const deepDiveTitle = $('deepDiveTitle');
+const deepDiveBody = $('deepDiveBody');
+const deepDiveActions = $('deepDiveActions');
+const deepDiveClose = $('deepDiveClose');
+
+function openDeepDive(noticeId) {
+  const opp = allOpportunities.find(o => o.notice_id === noticeId);
+  if (!opp) return;
+
+  deepDiveTitle.textContent = opp.title || 'Opportunity Details';
+
+  // Build sections
+  let html = '';
+  html += renderDDScorecard(opp);
+  html += renderDDReasons(opp);
+  html += renderDDRisks(opp);
+  html += renderDDSkillsets(opp);
+  html += renderDDKeyDates(opp);
+  html += renderDDMustCheck(opp);
+  html += renderDDAttachments(opp);
+  html += renderDDDescription(opp);
+  deepDiveBody.innerHTML = html;
+
+  // Action bar
+  deepDiveActions.innerHTML = `
+    <button class="dd-btn dd-btn-pursue" onclick="ddPursue('${escapeHtml(opp.notice_id)}')">Pursue</button>
+    <button class="dd-btn dd-btn-pass" onclick="ddPass('${escapeHtml(opp.notice_id)}')">Pass</button>
+    ${opp.ui_link ? `<button class="dd-btn dd-btn-sam" onclick="window.open('${escapeHtml(opp.ui_link)}', '_blank')">SAM.gov</button>` : ''}
+  `;
+
+  deepDivePanel.classList.add('open');
+  deepDiveBackdrop.classList.add('visible');
+}
+
+function closeDeepDive() {
+  deepDivePanel.classList.remove('open');
+  deepDiveBackdrop.classList.remove('visible');
+}
+
+// Close handlers
+deepDiveClose.addEventListener('click', closeDeepDive);
+deepDiveBackdrop.addEventListener('click', closeDeepDive);
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && deepDivePanel.classList.contains('open')) {
+    closeDeepDive();
+  }
+});
+
+window.openDeepDive = openDeepDive;
+window.closeDeepDive = closeDeepDive;
+
+// --- Section Renderers ---
+
+function renderDDScorecard(opp) {
+  const score = Math.round(opp.last_score || 0);
+  const scoreClass = score >= 80 ? 'score-green' : score >= 60 ? 'score-yellow' : 'score-red';
+  const fitLabel = opp.last_fit_label || '';
+  const eligibility = opp.ai_is_relevant != null
+    ? (opp.ai_is_relevant ? '<span style="color:#10b981;"><i class="fas fa-check-circle"></i> Relevant</span>' : '<span style="color:#f59e0b;"><i class="fas fa-exclamation-triangle"></i> Low relevance</span>')
+    : '';
+  const value = opp.estimated_value ? `<span><i class="fas fa-dollar-sign"></i> ${escapeHtml(opp.estimated_value)}</span>` : '';
+
+  return `
+    <div class="deep-dive-section">
+      <h3><i class="fas fa-chart-bar"></i> Scorecard</h3>
+      <div class="dd-scorecard">
+        <div class="dd-score-badge ${scoreClass}">${score}</div>
+        <div class="dd-fit-label">${escapeHtml(fitLabel)}</div>
+        <div class="dd-meta-row">
+          ${eligibility}
+          ${value}
+          ${opp.set_aside ? `<span><i class="fas fa-tag"></i> ${escapeHtml(opp.set_aside)}</span>` : ''}
+          ${opp.naics_code ? `<span>${escapeHtml(opp.naics_code)}</span>` : ''}
+        </div>
+      </div>
+    </div>`;
+}
+
+function renderDDReasons(opp) {
+  if (!opp.ai_reasons_json) return '';
+  try {
+    const reasons = JSON.parse(opp.ai_reasons_json);
+    if (!Array.isArray(reasons) || reasons.length === 0) return '';
+    const items = reasons.map(r => `<li>${escapeHtml(String(r))}</li>`).join('');
+    return `
+      <div class="deep-dive-section">
+        <h3><i class="fas fa-thumbs-up"></i> Why It Scored Well</h3>
+        <ul class="dd-reasons">${items}</ul>
+      </div>`;
+  } catch { return ''; }
+}
+
+function renderDDRisks(opp) {
+  if (!opp.ai_risks_json) {
+    return `
+      <div class="deep-dive-section">
+        <h3><i class="fas fa-exclamation-triangle"></i> Risks</h3>
+        <div class="dd-empty-text">No risk analysis available</div>
+      </div>`;
+  }
+  try {
+    const risks = JSON.parse(opp.ai_risks_json);
+    if (!Array.isArray(risks) || risks.length === 0) {
+      return `
+        <div class="deep-dive-section">
+          <h3><i class="fas fa-exclamation-triangle"></i> Risks</h3>
+          <div class="dd-risks-empty"><i class="fas fa-check-circle"></i> No significant risks identified</div>
+        </div>`;
+    }
+    const items = risks.map(r => `<li>${escapeHtml(String(r))}</li>`).join('');
+    return `
+      <div class="deep-dive-section">
+        <h3><i class="fas fa-exclamation-triangle"></i> Risks</h3>
+        <ul class="dd-risks">${items}</ul>
+      </div>`;
+  } catch { return ''; }
+}
+
+function renderDDSkillsets(opp) {
+  if (!opp.ai_skillsets_json) return '';
+  try {
+    const skills = JSON.parse(opp.ai_skillsets_json);
+    if (!Array.isArray(skills) || skills.length === 0) return '';
+    const chips = skills.map(s => `<span class="dd-chip">${escapeHtml(String(s))}</span>`).join('');
+    return `
+      <div class="deep-dive-section">
+        <h3><i class="fas fa-tools"></i> Required Skillsets</h3>
+        <div class="dd-skills">${chips}</div>
+      </div>`;
+  } catch { return ''; }
+}
+
+function renderDDKeyDates(opp) {
+  let dates = [];
+
+  // Always include response deadline
+  if (opp.response_deadline) {
+    dates.push({ label: 'Response Deadline', date: opp.response_deadline });
+  }
+
+  if (opp.ai_key_dates_json) {
+    try {
+      const parsed = JSON.parse(opp.ai_key_dates_json);
+      if (Array.isArray(parsed)) {
+        for (const d of parsed) {
+          // Avoid duplicate deadline
+          if (d.label && d.date && d.label.toLowerCase() !== 'response deadline') {
+            dates.push(d);
+          }
+        }
+      }
+    } catch { /* ignore parse errors */ }
+  }
+
+  if (dates.length === 0) return '';
+
+  const items = dates.map(d => {
+    const dateStr = d.date ? formatDate(d.date) : escapeHtml(String(d.date || ''));
+    return `<li><span class="dd-date-label">${escapeHtml(String(d.label))}</span><span class="dd-date-value">${dateStr}</span></li>`;
+  }).join('');
+
+  return `
+    <div class="deep-dive-section">
+      <h3><i class="fas fa-calendar-alt"></i> Key Dates</h3>
+      <ul class="dd-dates">${items}</ul>
+    </div>`;
+}
+
+function renderDDMustCheck(opp) {
+  if (!opp.ai_must_check_json) return '';
+  try {
+    const items = JSON.parse(opp.ai_must_check_json);
+    if (!Array.isArray(items) || items.length === 0) return '';
+    const listItems = items.map(item => `<li>${escapeHtml(String(item))}</li>`).join('');
+    return `
+      <div class="deep-dive-section">
+        <h3><i class="fas fa-clipboard-check"></i> Must Check</h3>
+        <ul class="dd-must-check">${listItems}</ul>
+      </div>`;
+  } catch { return ''; }
+}
+
+function renderDDAttachments(opp) {
+  if (!opp.ai_attachment_summary) {
+    return `
+      <div class="deep-dive-section">
+        <h3><i class="fas fa-paperclip"></i> Attachment Analysis</h3>
+        <div class="dd-empty-text">No attachment analysis available</div>
+      </div>`;
+  }
+  return `
+    <div class="deep-dive-section">
+      <h3><i class="fas fa-paperclip"></i> Attachment Analysis</h3>
+      <div class="dd-attachment-summary">${escapeHtml(opp.ai_attachment_summary)}</div>
+    </div>`;
+}
+
+function renderDDDescription(opp) {
+  if (!opp.description_excerpt) return '';
+  const truncated = opp.description_excerpt.length >= 1990;
+  return `
+    <div class="deep-dive-section">
+      <h3><i class="fas fa-file-alt"></i> Description</h3>
+      <div class="dd-description" id="ddDescText">${escapeHtml(opp.description_excerpt)}</div>
+      ${truncated ? '<button class="dd-desc-toggle" onclick="toggleDDDescription()">Show more...</button>' : ''}
+    </div>`;
+}
+
+function toggleDDDescription() {
+  const el = document.getElementById('ddDescText');
+  const btn = el?.nextElementSibling;
+  if (!el) return;
+  el.classList.toggle('expanded');
+  if (btn) btn.textContent = el.classList.contains('expanded') ? 'Show less' : 'Show more...';
+}
+window.toggleDDDescription = toggleDDDescription;
+
+// --- Action Buttons ---
+
+async function ddPursue(noticeId) {
+  const { error } = await sb
+    .from('scanner_opportunities')
+    .update({ pursuit_status: 'interested' })
+    .eq('notice_id', noticeId);
+
+  if (error) {
+    console.error('Failed to update pursuit status:', error);
+    return;
+  }
+
+  closeDeepDive();
+  showDDToast('Marked as Interested');
+  await loadTopOpportunities();
+}
+
+async function ddPass(noticeId) {
+  await dismissOpportunity(noticeId);
+  closeDeepDive();
+}
+
+function showDDToast(message) {
+  let toast = document.querySelector('.dd-toast');
+  if (!toast) {
+    toast = document.createElement('div');
+    toast.className = 'dd-toast';
+    document.body.appendChild(toast);
+  }
+  toast.textContent = message;
+  toast.classList.add('show');
+  setTimeout(() => toast.classList.remove('show'), 2500);
+}
+
+window.ddPursue = ddPursue;
+window.ddPass = ddPass;
+
+// --- Row Click Handler ---
+
+if (topOppsTableBody) {
+  topOppsTableBody.addEventListener('click', (e) => {
+    // Ignore clicks on interactive elements
+    const target = e.target.closest('a, button, .opp-thumb, .opp-dismiss-btn, .opp-track-btn, .opp-score-badge.has-reasons, .opp-tracking-badge');
+    if (target) return;
+
+    const row = e.target.closest('tr');
+    if (!row) return;
+
+    // Find notice_id from the row — extract from dismiss button onclick
+    const dismissBtn = row.querySelector('.opp-dismiss-btn');
+    if (!dismissBtn) return;
+    const onclickAttr = dismissBtn.getAttribute('onclick') || '';
+    const match = onclickAttr.match(/dismissOpportunity\('([^']+)'\)/);
+    if (match) {
+      openDeepDive(match[1]);
+    }
+  });
+}
+
+// ============================================================
 // Utils
 // ============================================================
 
