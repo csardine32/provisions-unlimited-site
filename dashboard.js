@@ -1,5 +1,5 @@
 // ============================================================
-// Provisions Deadline Dashboard — Client JS
+// Provisions Opportunity Hub — Client JS
 // Supabase-backed, no framework, real-time updates
 // ============================================================
 
