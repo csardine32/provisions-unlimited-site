@@ -14,7 +14,7 @@
       rel="stylesheet"
     />
     <link rel="stylesheet" href="style.css" />
-    <link rel="stylesheet" href="dashboard.css" />
+    <link rel="stylesheet" href="dashboard.css?v=5" />
   </head>
   <body>
     <!-- ============ Login Overlay ============ -->
@@ -103,13 +103,16 @@
                 <th>Score</th>
                 <th>Opportunity</th>
                 <th>Agency</th>
+                <th>Value</th>
                 <th>Deadline</th>
                 <th>Set-Aside</th>
+                <th></th>
                 <th></th>
               </tr>
             </thead>
             <tbody id="topOppsTableBody"></tbody>
           </table>
+          <div class="top-opps-dismissed-link" id="dismissedLink" style="display: none;"></div>
         </div>
       </div>
 
@@ -242,6 +245,6 @@
 
     <!-- Supabase SDK -->
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
-    <script src="dashboard.js"></script>
+    <script src="dashboard.js?v=5"></script>
   </body>
 </html>

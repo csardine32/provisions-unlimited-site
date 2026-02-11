@@ -254,7 +254,7 @@
   border: 1px solid #e5e7eb;
   border-top: none;
   border-radius: 0 0 8px 8px;
-  overflow-x: auto;
+  overflow: visible;
 }
 .top-opps-section.collapsed .top-opps-body {
   display: none;
@@ -366,6 +366,118 @@
   color: #10b981;
   text-transform: uppercase;
   letter-spacing: 0.5px;
+}
+
+/* Value column */
+.opp-value-cell {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #6b7280;
+  white-space: nowrap;
+}
+
+/* --- Score "Why" (click-to-expand inline) --- */
+.opp-score-badge.has-reasons {
+  cursor: pointer;
+}
+.opp-reasons {
+  display: none;
+  margin-top: 6px;
+  background: #f0f4f8;
+  border-radius: 4px;
+  padding: 8px 10px 8px 24px;
+  font-size: 0.72rem;
+  line-height: 1.5;
+  color: var(--text-dark);
+  list-style: disc;
+}
+.opp-reasons.open {
+  display: block;
+}
+.opp-reasons li {
+  margin-bottom: 2px;
+}
+.opp-reasons li:last-child {
+  margin-bottom: 0;
+}
+
+/* --- Feedback Buttons (Thumbs) --- */
+.opp-feedback-btns {
+  display: inline-flex;
+  gap: 2px;
+  margin-left: 6px;
+  vertical-align: middle;
+}
+.opp-thumb {
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  padding: 3px 5px;
+  cursor: pointer;
+  color: #d1d5db;
+  font-size: 0.7rem;
+  transition: all 0.15s;
+  line-height: 1;
+}
+.opp-thumb:hover {
+  color: #6b7280;
+  border-color: #e5e7eb;
+}
+.opp-thumb.active {
+  color: var(--primary-navy);
+  border-color: var(--primary-navy);
+  background: #eff6ff;
+}
+.opp-thumb.active .fa-thumbs-down {
+  color: var(--accent-red);
+}
+
+/* --- Dismiss Button --- */
+.opp-dismiss-btn {
+  background: none;
+  border: none;
+  color: #d1d5db;
+  cursor: pointer;
+  font-size: 0.75rem;
+  padding: 4px 6px;
+  border-radius: 3px;
+  transition: all 0.15s;
+  line-height: 1;
+}
+.opp-dismiss-btn:hover {
+  color: var(--accent-red);
+  background: #fef2f2;
+}
+
+/* --- Preference Match Indicator --- */
+.opp-pref-match {
+  background: #fffbeb !important;
+}
+.opp-pref-indicator {
+  color: #f59e0b;
+  font-size: 0.65rem;
+  margin-right: 4px;
+  vertical-align: middle;
+}
+
+/* --- Dismissed link --- */
+.top-opps-dismissed-link {
+  padding: 8px 20px 12px;
+  background: var(--white);
+  border: 1px solid #e5e7eb;
+  border-top: none;
+  border-radius: 0 0 8px 8px;
+  text-align: center;
+}
+.top-opps-dismissed-link a {
+  font-size: 0.75rem;
+  color: #9ca3af;
+  text-decoration: none;
+  font-weight: 600;
+}
+.top-opps-dismissed-link a:hover {
+  color: var(--primary-navy);
+  text-decoration: underline;
 }
 
 /* --- Toolbar --- */
@@ -782,11 +894,15 @@
   .urgency-box .urgency-count { font-size: 1.6rem; }
 
   .top-opps-section { padding: 0 16px; }
+  .top-opps-body { overflow-x: auto; }
   .top-opps-table { font-size: 0.8rem; }
   .top-opps-table thead th,
   .top-opps-table tbody td { padding: 8px 10px; }
   .opp-title-cell { max-width: 200px; }
   .opp-summary { display: none; }
+  .opp-value-cell { display: none; }
+  .top-opps-table thead th:nth-child(4) { display: none; }
+  .opp-feedback-btns { display: none; }
 
   .dash-toolbar {
     padding: 0 16px 12px;

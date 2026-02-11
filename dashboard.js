@@ -102,6 +102,7 @@ async function showDashboard() {
   dashboardApp.classList.add('visible');
   currentUserEl.textContent = currentUser.email.split('@')[0];
   await loadProjects();
+  await Promise.all([loadUserDismissals(), loadUserFeedback()]);
   await loadTopOpportunities();
   setupRealtimeSubscriptions();
   startCountdownTimer();
@@ -194,6 +195,13 @@ function setupRealtimeSubscriptions() {
     .on('postgres_changes', { event: '*', schema: 'public', table: 'projects' }, () => loadProjects())
     .on('postgres_changes', { event: '*', schema: 'public', table: 'milestones' }, () => loadProjects())
     .on('postgres_changes', { event: '*', schema: 'public', table: 'checklist_items' }, () => loadProjects())
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'scanner_opportunities' }, () => loadTopOpportunities())
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'opportunity_feedback' }, () => {
+      loadUserFeedback().then(() => loadTopOpportunities());
+    })
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'opportunity_dismissals' }, () => {
+      loadUserDismissals().then(() => loadTopOpportunities());
+    })
     .subscribe();
 }
 
@@ -673,6 +681,13 @@ const topOppsToggle = $('topOppsToggle');
 const topOppsBody = $('topOppsBody');
 const topOppsCount = $('topOppsCount');
 const topOppsTableBody = $('topOppsTableBody');
+const dismissedLink = $('dismissedLink');
+
+// Per-user state
+let userDismissals = new Set();
+let userFeedback = {};     // { notice_id: 'up'|'down' }
+let userPreferences = null; // computed from feedback history
+let allOpportunities = [];  // unfiltered list from Supabase
 
 // Toggle collapse
 if (topOppsToggle) {
@@ -680,6 +695,88 @@ if (topOppsToggle) {
     topOppsSection.classList.toggle('collapsed');
   });
 }
+
+// --- Load user's dismissals and feedback ---
+
+async function loadUserDismissals() {
+  const { data } = await sb
+    .from('opportunity_dismissals')
+    .select('notice_id')
+    .eq('user_id', currentUser.id);
+  userDismissals = new Set((data || []).map(d => d.notice_id));
+}
+
+async function loadUserFeedback() {
+  const { data } = await sb
+    .from('opportunity_feedback')
+    .select('notice_id, rating')
+    .eq('user_id', currentUser.id);
+  userFeedback = {};
+  for (const row of (data || [])) {
+    userFeedback[row.notice_id] = row.rating;
+  }
+  buildPreferences();
+}
+
+// --- Preference profile (client-side only) ---
+
+function buildPreferences() {
+  const liked = Object.entries(userFeedback).filter(([, r]) => r === 'up');
+  if (liked.length < 2) { userPreferences = null; return; }
+
+  const likedNoticeIds = new Set(liked.map(([id]) => id));
+  const likedOpps = allOpportunities.filter(o => likedNoticeIds.has(o.notice_id));
+
+  const agencyCounts = {};
+  const naicsCounts = {};
+  const setAsideCounts = {};
+
+  for (const o of likedOpps) {
+    if (o.agency) agencyCounts[o.agency] = (agencyCounts[o.agency] || 0) + 1;
+    if (o.naics_code) naicsCounts[o.naics_code] = (naicsCounts[o.naics_code] || 0) + 1;
+    if (o.set_aside) setAsideCounts[o.set_aside] = (setAsideCounts[o.set_aside] || 0) + 1;
+  }
+
+  // Consider a preference "signal" if it appears in >=2 liked opps
+  const threshold = 2;
+  userPreferences = {
+    agencies: new Set(Object.entries(agencyCounts).filter(([, c]) => c >= threshold).map(([k]) => k)),
+    naics: new Set(Object.entries(naicsCounts).filter(([, c]) => c >= threshold).map(([k]) => k)),
+    setAsides: new Set(Object.entries(setAsideCounts).filter(([, c]) => c >= threshold).map(([k]) => k)),
+  };
+}
+
+function matchesPreferences(opp) {
+  if (!userPreferences) return false;
+  return (
+    (opp.agency && userPreferences.agencies.has(opp.agency)) ||
+    (opp.naics_code && userPreferences.naics.has(opp.naics_code)) ||
+    (opp.set_aside && userPreferences.setAsides.has(opp.set_aside))
+  );
+}
+
+// --- Score "Why" (click-to-expand inline) ---
+
+function buildReasonsHtml(aiReasonsJson, noticeId) {
+  if (!aiReasonsJson) return '';
+  try {
+    const reasons = JSON.parse(aiReasonsJson);
+    if (!Array.isArray(reasons) || reasons.length === 0) return '';
+    const items = reasons.slice(0, 4).map(r =>
+      `<li>${escapeHtml(String(r))}</li>`
+    ).join('');
+    return `<ul class="opp-reasons" id="reasons-${escapeHtml(noticeId)}">${items}</ul>`;
+  } catch { return ''; }
+}
+
+function toggleReasons(noticeId) {
+  const el = document.getElementById('reasons-' + noticeId);
+  if (el) el.classList.toggle('open');
+}
+
+window.toggleReasons = toggleReasons;
+
+// --- Main render ---
 
 async function loadTopOpportunities() {
   const { data, error } = await sb
@@ -692,52 +789,159 @@ async function loadTopOpportunities() {
     return;
   }
 
-  if (!data || data.length === 0) {
+  allOpportunities = data || [];
+
+  if (allOpportunities.length === 0) {
     topOppsSection.style.display = 'none';
     return;
   }
+
+  // Re-compute preferences whenever we reload
+  buildPreferences();
 
   // Check which notice_ids are already tracked as projects
   const trackedNoticeIds = new Set(
     projects.filter(p => p.notice_id).map(p => p.notice_id)
   );
 
-  topOppsCount.textContent = data.length;
+  // Filter out dismissed
+  const visible = allOpportunities.filter(o => !userDismissals.has(o.notice_id));
+  const dismissedCount = allOpportunities.length - visible.length;
+
+  topOppsCount.textContent = visible.length;
   topOppsSection.style.display = 'block';
 
-  topOppsTableBody.innerHTML = data.map((opp) => {
+  topOppsTableBody.innerHTML = visible.map((opp) => {
     const scoreClass = opp.last_score >= 80 ? 'score-green' : opp.last_score >= 60 ? 'score-yellow' : 'score-red';
     const deadlineStr = opp.response_deadline ? formatDate(opp.response_deadline) : '';
     const daysLeft = opp.response_deadline ? getDaysUntil(opp.response_deadline) : null;
     const deadlineClass = daysLeft !== null && daysLeft <= 7 ? 'opp-deadline-urgent' : '';
     const isTracked = trackedNoticeIds.has(opp.notice_id);
+    const prefMatch = matchesPreferences(opp);
 
     const summaryHtml = opp.ai_summary
       ? `<div class="opp-summary">${escapeHtml(opp.ai_summary)}</div>`
       : '';
 
+    const reasonsHtml = buildReasonsHtml(opp.ai_reasons_json, opp.notice_id);
+
     const actionHtml = isTracked
       ? `<span class="opp-tracking-badge"><i class="fas fa-check"></i> Tracked</span>`
       : `<button class="opp-track-btn" onclick="trackOpportunity('${escapeHtml(opp.notice_id)}')">Track</button>`;
 
+    // Feedback buttons
+    const rating = userFeedback[opp.notice_id];
+    const thumbUpClass = rating === 'up' ? 'active' : '';
+    const thumbDownClass = rating === 'down' ? 'active' : '';
+
+    const feedbackHtml = `
+      <span class="opp-feedback-btns">
+        <button class="opp-thumb ${thumbUpClass}" onclick="toggleFeedback('${escapeHtml(opp.notice_id)}', 'up')" title="Thumbs up"><i class="fas fa-thumbs-up"></i></button>
+        <button class="opp-thumb ${thumbDownClass}" onclick="toggleFeedback('${escapeHtml(opp.notice_id)}', 'down')" title="Thumbs down"><i class="fas fa-thumbs-down"></i></button>
+      </span>`;
+
+    const valueHtml = opp.estimated_value ? escapeHtml(opp.estimated_value) : '';
+
     return `
-      <tr>
-        <td><span class="opp-score-badge ${scoreClass}">${Math.round(opp.last_score)}</span></td>
+      <tr${prefMatch ? ' class="opp-pref-match"' : ''}>
+        <td>
+          <span class="opp-score-badge ${scoreClass}${reasonsHtml ? ' has-reasons' : ''}" ${reasonsHtml ? `onclick="toggleReasons('${escapeHtml(opp.notice_id)}')"` : ''}>${Math.round(opp.last_score)}</span>
+        </td>
         <td class="opp-title-cell">
+          ${prefMatch ? '<span class="opp-pref-indicator" title="Matches your preferences"><i class="fas fa-star"></i></span>' : ''}
           ${opp.ui_link
             ? `<a class="opp-title-link" href="${escapeHtml(opp.ui_link)}" target="_blank" rel="noopener">${escapeHtml(opp.title)}</a>`
             : `<span class="opp-title-link">${escapeHtml(opp.title)}</span>`
           }
           ${summaryHtml}
+          ${reasonsHtml}
         </td>
         <td>${escapeHtml(opp.agency || '')}</td>
+        <td class="opp-value-cell">${valueHtml}</td>
         <td class="opp-deadline-cell ${deadlineClass}">${deadlineStr}${daysLeft !== null && daysLeft <= 14 ? ` <small>(${daysLeft}d)</small>` : ''}</td>
         <td><span class="opp-set-aside">${escapeHtml(opp.set_aside || '')}</span></td>
-        <td>${actionHtml}</td>
+        <td>${actionHtml} ${feedbackHtml}</td>
+        <td><button class="opp-dismiss-btn" onclick="dismissOpportunity('${escapeHtml(opp.notice_id)}')" title="Dismiss"><i class="fas fa-times"></i></button></td>
       </tr>
     `;
   }).join('');
+
+  // Show/hide dismissed link
+  if (dismissedCount > 0) {
+    dismissedLink.style.display = 'block';
+    dismissedLink.innerHTML = `<a href="#" onclick="showDismissed(event)">Show ${dismissedCount} dismissed</a>`;
+  } else {
+    dismissedLink.style.display = 'none';
+  }
+
 }
+
+// --- Dismiss ---
+
+async function dismissOpportunity(noticeId) {
+  const { error } = await sb.from('opportunity_dismissals').upsert({
+    user_id: currentUser.id,
+    notice_id: noticeId,
+  }, { onConflict: 'user_id,notice_id' });
+
+  if (error) {
+    console.error('Failed to dismiss:', error);
+    return;
+  }
+  userDismissals.add(noticeId);
+  await loadTopOpportunities();
+}
+
+async function undismissOpportunity(noticeId) {
+  await sb.from('opportunity_dismissals')
+    .delete()
+    .eq('user_id', currentUser.id)
+    .eq('notice_id', noticeId);
+  userDismissals.delete(noticeId);
+  await loadTopOpportunities();
+}
+
+function showDismissed(e) {
+  e.preventDefault();
+  userDismissals.clear();
+  loadTopOpportunities();
+}
+
+window.dismissOpportunity = dismissOpportunity;
+window.undismissOpportunity = undismissOpportunity;
+window.showDismissed = showDismissed;
+
+// --- Feedback (thumbs up/down) ---
+
+async function toggleFeedback(noticeId, rating) {
+  const current = userFeedback[noticeId];
+
+  if (current === rating) {
+    // Remove rating
+    await sb.from('opportunity_feedback')
+      .delete()
+      .eq('user_id', currentUser.id)
+      .eq('notice_id', noticeId);
+    delete userFeedback[noticeId];
+  } else {
+    // Upsert rating
+    const { error } = await sb.from('opportunity_feedback').upsert({
+      user_id: currentUser.id,
+      notice_id: noticeId,
+      rating,
+    }, { onConflict: 'user_id,notice_id' });
+    if (error) {
+      console.error('Failed to save feedback:', error);
+      return;
+    }
+    userFeedback[noticeId] = rating;
+  }
+
+  buildPreferences();
+  await loadTopOpportunities();
+}
+
+window.toggleFeedback = toggleFeedback;
 
 /**
  * Track an opportunity — promotes it to a full dashboard project
