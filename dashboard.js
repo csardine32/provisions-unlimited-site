@@ -102,6 +102,7 @@ async function showDashboard() {
   dashboardApp.classList.add('visible');
   currentUserEl.textContent = currentUser.email.split('@')[0];
   await loadProjects();
+  await loadTopOpportunities();
   setupRealtimeSubscriptions();
   startCountdownTimer();
 }
@@ -662,6 +663,166 @@ async function logActivity(projectId, action, details = null) {
   });
 }
 
+
+// ============================================================
+// Top Opportunities Widget
+// ============================================================
+
+const topOppsSection = $('topOppsSection');
+const topOppsToggle = $('topOppsToggle');
+const topOppsBody = $('topOppsBody');
+const topOppsCount = $('topOppsCount');
+const topOppsTableBody = $('topOppsTableBody');
+
+// Toggle collapse
+if (topOppsToggle) {
+  topOppsToggle.addEventListener('click', () => {
+    topOppsSection.classList.toggle('collapsed');
+  });
+}
+
+async function loadTopOpportunities() {
+  const { data, error } = await sb
+    .from('scanner_opportunities')
+    .select('*')
+    .order('last_score', { ascending: false });
+
+  if (error) {
+    console.error('Failed to load top opportunities:', error);
+    return;
+  }
+
+  if (!data || data.length === 0) {
+    topOppsSection.style.display = 'none';
+    return;
+  }
+
+  // Check which notice_ids are already tracked as projects
+  const trackedNoticeIds = new Set(
+    projects.filter(p => p.notice_id).map(p => p.notice_id)
+  );
+
+  topOppsCount.textContent = data.length;
+  topOppsSection.style.display = 'block';
+
+  topOppsTableBody.innerHTML = data.map((opp) => {
+    const scoreClass = opp.last_score >= 80 ? 'score-green' : opp.last_score >= 60 ? 'score-yellow' : 'score-red';
+    const deadlineStr = opp.response_deadline ? formatDate(opp.response_deadline) : '';
+    const daysLeft = opp.response_deadline ? getDaysUntil(opp.response_deadline) : null;
+    const deadlineClass = daysLeft !== null && daysLeft <= 7 ? 'opp-deadline-urgent' : '';
+    const isTracked = trackedNoticeIds.has(opp.notice_id);
+
+    const summaryHtml = opp.ai_summary
+      ? `<div class="opp-summary">${escapeHtml(opp.ai_summary)}</div>`
+      : '';
+
+    const actionHtml = isTracked
+      ? `<span class="opp-tracking-badge"><i class="fas fa-check"></i> Tracked</span>`
+      : `<button class="opp-track-btn" onclick="trackOpportunity('${escapeHtml(opp.notice_id)}')">Track</button>`;
+
+    return `
+      <tr>
+        <td><span class="opp-score-badge ${scoreClass}">${Math.round(opp.last_score)}</span></td>
+        <td class="opp-title-cell">
+          ${opp.ui_link
+            ? `<a class="opp-title-link" href="${escapeHtml(opp.ui_link)}" target="_blank" rel="noopener">${escapeHtml(opp.title)}</a>`
+            : `<span class="opp-title-link">${escapeHtml(opp.title)}</span>`
+          }
+          ${summaryHtml}
+        </td>
+        <td>${escapeHtml(opp.agency || '')}</td>
+        <td class="opp-deadline-cell ${deadlineClass}">${deadlineStr}${daysLeft !== null && daysLeft <= 14 ? ` <small>(${daysLeft}d)</small>` : ''}</td>
+        <td><span class="opp-set-aside">${escapeHtml(opp.set_aside || '')}</span></td>
+        <td>${actionHtml}</td>
+      </tr>
+    `;
+  }).join('');
+}
+
+/**
+ * Track an opportunity — promotes it to a full dashboard project
+ * with auto-generated milestones and document checklist.
+ */
+async function trackOpportunity(noticeId) {
+  // Find the opportunity data
+  const { data: opp, error: fetchError } = await sb
+    .from('scanner_opportunities')
+    .select('*')
+    .eq('notice_id', noticeId)
+    .single();
+
+  if (fetchError || !opp) {
+    console.error('Failed to fetch opportunity:', fetchError);
+    alert('Failed to load opportunity data.');
+    return;
+  }
+
+  // Create project
+  const projectData = {
+    title: opp.title,
+    agency: opp.agency || null,
+    solicitation_number: opp.solicitation_number || null,
+    notice_id: opp.notice_id,
+    response_deadline: opp.response_deadline,
+    owner: 'Chris',
+    status: 'active',
+    priority: opp.last_score >= 80 ? 'high' : 'normal',
+    naics_code: opp.naics_code || null,
+    set_aside: opp.set_aside || null,
+    sam_link: opp.ui_link || null,
+    notes: opp.ai_summary || null,
+    created_by: currentUser.id,
+  };
+
+  const { data: project, error: projectError } = await sb
+    .from('projects')
+    .insert(projectData)
+    .select()
+    .single();
+
+  if (projectError) {
+    console.error('Failed to create project:', projectError);
+    alert('Failed to create project. It may already be tracked.');
+    return;
+  }
+
+  // Auto-generate milestones
+  if (opp.response_deadline) {
+    const deadlineDate = new Date(opp.response_deadline);
+    const milestones = MILESTONE_TEMPLATE.map((m, i) => {
+      const dueDate = new Date(deadlineDate);
+      dueDate.setDate(dueDate.getDate() - m.daysBeforeDeadline);
+      return {
+        project_id: project.id,
+        title: m.title,
+        due_date: dueDate.toISOString(),
+        sort_order: i,
+      };
+    });
+
+    const { error: mError } = await sb.from('milestones').insert(milestones);
+    if (mError) console.error('Failed to create milestones:', mError);
+  }
+
+  // Auto-generate document checklist
+  const checklistItems = DEFAULT_CHECKLIST.map((label, i) => ({
+    project_id: project.id,
+    label,
+    sort_order: i,
+  }));
+
+  const { error: cError } = await sb.from('checklist_items').insert(checklistItems);
+  if (cError) console.error('Failed to create checklist:', cError);
+
+  // Log activity
+  await logActivity(project.id, 'Tracked from Top Opportunities', `notice_id: ${opp.notice_id}, score: ${opp.last_score}`);
+
+  // Reload both lists
+  await loadProjects();
+  await loadTopOpportunities();
+}
+
+window.trackOpportunity = trackOpportunity;
 
 // ============================================================
 // Utils
