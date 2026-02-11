@@ -1500,10 +1500,11 @@ const views = {
   analyze: { el: () => $('viewAnalyze'), init: initAnalyzeView, adminOnly: true },
 };
 
+const ADMIN_EMAILS = ['csardine@provisionsunlimited.net', 'csardine32@gmail.com'];
+
 function isAdmin() {
   if (!currentUser) return false;
-  const email = (currentUser.email || '').toLowerCase();
-  return email.startsWith('chris');
+  return ADMIN_EMAILS.includes((currentUser.email || '').toLowerCase());
 }
 
 function navigateTo(viewName) {
