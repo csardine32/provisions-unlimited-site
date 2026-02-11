@@ -1596,9 +1596,14 @@ function initAnalyzeView() {
   });
 }
 
+const TEXT_EXTENSIONS = ['.txt', '.csv', '.md', '.json', '.xml', '.tsv', '.log'];
+const SUPPORTED_EXTENSIONS = ['.pdf', '.docx', '.zip', ...TEXT_EXTENSIONS];
+
 async function handleAdHocFile(file) {
-  if (!file.name.toLowerCase().endsWith('.pdf')) {
-    showDDToast('Only PDF files are supported');
+  const ext = '.' + file.name.split('.').pop().toLowerCase();
+
+  if (!SUPPORTED_EXTENSIONS.includes(ext)) {
+    showDDToast('Unsupported file type. Supported: PDF, DOCX, TXT, CSV, ZIP, etc.');
     return;
   }
 
@@ -1609,12 +1614,37 @@ async function handleAdHocFile(file) {
       Analyzing ${escapeHtml(file.name)}... (15-30 seconds)
     </div>`;
 
-  // Convert to base64
-  const arrayBuffer = await file.arrayBuffer();
-  const bytes = new Uint8Array(arrayBuffer);
-  let binary = '';
-  for (const b of bytes) binary += String.fromCharCode(b);
-  const base64 = btoa(binary);
+  let body;
+
+  try {
+    if (ext === '.zip') {
+      body = await handleZipFile(file);
+
+    } else if (ext === '.pdf') {
+      const arrayBuffer = await file.arrayBuffer();
+      const bytes = new Uint8Array(arrayBuffer);
+      let binary = '';
+      for (const b of bytes) binary += String.fromCharCode(b);
+      body = { pdf_base64: btoa(binary), filename: file.name };
+
+    } else if (ext === '.docx') {
+      const arrayBuffer = await file.arrayBuffer();
+      const result = await mammoth.extractRawText({ arrayBuffer });
+      if (!result.value || !result.value.trim()) throw new Error('Could not extract text from DOCX');
+      body = { text_content: result.value, filename: file.name };
+
+    } else {
+      const text = await file.text();
+      if (!text.trim()) throw new Error('File is empty');
+      body = { text_content: text, filename: file.name };
+    }
+  } catch (err) {
+    resultDiv.innerHTML = `
+      <div class="dd-analyze-error">
+        <i class="fas fa-exclamation-circle"></i> ${escapeHtml(err.message)}
+      </div>`;
+    return;
+  }
 
   try {
     const response = await fetch(`${SUPABASE_URL}/functions/v1/analyze-adhoc`, {
@@ -1623,12 +1653,11 @@ async function handleAdHocFile(file) {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${(await sb.auth.getSession()).data.session?.access_token}`,
       },
-      body: JSON.stringify({ pdf_base64: base64, filename: file.name }),
+      body: JSON.stringify(body),
     });
     const result = await response.json();
     if (!response.ok) throw new Error(result.error || 'Analysis failed');
 
-    // Render using same renderAttachmentAnalysis format
     const fakeOpp = { attachment_analysis_json: JSON.stringify(result.analysis) };
     resultDiv.innerHTML = `
       <div class="analyze-result-header">
@@ -1642,6 +1671,41 @@ async function handleAdHocFile(file) {
         <i class="fas fa-exclamation-circle"></i> ${escapeHtml(err.message)}
       </div>`;
   }
+}
+
+async function handleZipFile(file) {
+  const zip = await JSZip.loadAsync(file);
+  const parts = [];
+  let pdfData = null;
+
+  for (const [path, entry] of Object.entries(zip.files)) {
+    if (entry.dir) continue;
+    const name = path.split('/').pop().toLowerCase();
+    const ext = '.' + name.split('.').pop();
+
+    if (ext === '.pdf' && !pdfData) {
+      const ab = await entry.async('arraybuffer');
+      const bytes = new Uint8Array(ab);
+      let binary = '';
+      for (const b of bytes) binary += String.fromCharCode(b);
+      pdfData = { base64: btoa(binary), name: path };
+    } else if (ext === '.docx') {
+      const ab = await entry.async('arraybuffer');
+      const result = await mammoth.extractRawText({ arrayBuffer: ab });
+      if (result.value?.trim()) parts.push(`=== ${path} ===\n${result.value}`);
+    } else if (TEXT_EXTENSIONS.includes(ext)) {
+      const text = await entry.async('text');
+      if (text.trim()) parts.push(`=== ${path} ===\n${text}`);
+    }
+  }
+
+  if (parts.length > 0) {
+    return { text_content: parts.join('\n\n'), filename: file.name };
+  }
+  if (pdfData) {
+    return { pdf_base64: pdfData.base64, filename: `${file.name} → ${pdfData.name}` };
+  }
+  throw new Error('No supported files found inside ZIP');
 }
 
 // Hash change listener

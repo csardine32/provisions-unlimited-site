@@ -14,7 +14,7 @@
       rel="stylesheet"
     />
     <link rel="stylesheet" href="style.css" />
-    <link rel="stylesheet" href="dashboard.css?v=9" />
+    <link rel="stylesheet" href="dashboard.css?v=10" />
   </head>
   <body>
     <!-- ============ Login Overlay ============ -->
@@ -169,12 +169,12 @@
           <div class="view" id="viewAnalyze">
             <div class="analyze-header">
               <h2>Ad-Hoc Document Analysis</h2>
-              <p>Drop a solicitation PDF to get an instant AI briefing</p>
+              <p>Drop a solicitation document (PDF, DOCX, TXT, CSV, ZIP, etc.) to get an instant AI briefing</p>
             </div>
             <div class="drop-zone" id="dropZone">
               <i class="fas fa-cloud-upload-alt"></i>
-              <span>Drag & drop PDF here, or click to browse</span>
-              <input type="file" id="fileInput" accept=".pdf" hidden />
+              <span>Drag & drop a file here, or click to browse</span>
+              <input type="file" id="fileInput" accept=".pdf,.txt,.csv,.md,.json,.xml,.docx,.zip" hidden />
             </div>
             <div id="analyzeResult"></div>
           </div>
@@ -318,6 +318,8 @@
 
     <!-- Supabase SDK -->
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
-    <script src="dashboard.js?v=9"></script>
+    <script src="https://cdn.jsdelivr.net/npm/mammoth@1.8.0/mammoth.browser.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
+    <script src="dashboard.js?v=10"></script>
   </body>
 </html>
