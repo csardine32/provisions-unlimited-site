@@ -19,12 +19,14 @@ function initSupabase() {
 
 // --- State ---
 let currentUser = null;
-let projects = [];
+let projects = [];         // pipeline (active/submitted)
+let awardedProjects = [];  // awarded contracts (won)
 let editingProjectId = null;
 let countdownInterval = null;
 let currentView = null;
 let scannerInitialized = false;
-let projectsInitialized = false;
+let pipelineInitialized = false;
+let activeProjectsInitialized = false;
 let adhocAnalyses = [];
 let adhocInitialized = false;
 let showAllAdhoc = false;
@@ -64,7 +66,8 @@ const loginBtn = $('loginBtn');
 const dashboardApp = $('dashboardApp');
 const currentUserEl = $('currentUser');
 const logoutBtn = $('logoutBtn');
-const projectsGrid = $('projectsGrid');
+const pipelineGrid = $('pipelineGrid');
+const activeProjectsGrid = $('activeProjectsGrid');
 const loadingSpinner = $('loadingSpinner');
 const addProjectBtn = $('addProjectBtn');
 const modalOverlay = $('modalOverlay');
@@ -78,7 +81,7 @@ const projectForm = $('projectForm');
 const countOverdue = $('countOverdue');
 const countDue7 = $('countDue7');
 const countDue14 = $('countDue14');
-const countActive = $('countActive');
+const countPipeline = $('countPipeline');
 
 // ============================================================
 // Auth
@@ -109,9 +112,11 @@ function showLogin() {
   document.body.classList.remove('is-admin');
   currentView = null;
   scannerInitialized = false;
-  projectsInitialized = false;
+  pipelineInitialized = false;
+  activeProjectsInitialized = false;
   adhocInitialized = false;
   adhocAnalyses = [];
+  awardedProjects = [];
   showAllAdhoc = false;
   pendingAdhocId = null;
   pendingAdhocNoticeId = null;
@@ -213,6 +218,135 @@ async function loadProjects() {
   updateUrgencyCounts();
 }
 
+async function loadAwardedProjects() {
+  const { data, error } = await sb
+    .from('projects')
+    .select(`
+      *,
+      milestones ( * ),
+      checklist_items ( * )
+    `)
+    .eq('status', 'won')
+    .order('updated_at', { ascending: false });
+
+  if (error) {
+    console.error('Failed to load awarded projects:', error);
+    return;
+  }
+
+  awardedProjects = data || [];
+
+  for (const p of awardedProjects) {
+    if (p.milestones) p.milestones.sort((a, b) => a.sort_order - b.sort_order);
+    if (p.checklist_items) p.checklist_items.sort((a, b) => a.sort_order - b.sort_order);
+  }
+
+  renderAwardedProjects();
+}
+
+function renderAwardedProjects() {
+  if (awardedProjects.length === 0) {
+    activeProjectsGrid.innerHTML = `
+      <div class="empty-state" style="grid-column: 1 / -1;">
+        <i class="fas fa-trophy"></i>
+        <h3>No Awarded Contracts Yet</h3>
+        <p>When you win a contract, update its status to "Won" and it will appear here.</p>
+      </div>
+    `;
+    return;
+  }
+
+  activeProjectsGrid.innerHTML = awardedProjects.map((p) => {
+    const ownerClass = (p.owner || 'Chris').toLowerCase();
+
+    const checklistHtml = (p.checklist_items || []).map((c) => `
+      <div class="checklist-item ${c.completed ? 'completed' : ''}">
+        <input type="checkbox" ${c.completed ? 'checked' : ''}
+               onchange="toggleChecklist('${c.id}', this.checked)" />
+        <span>${escapeHtml(c.label)}</span>
+      </div>
+    `).join('');
+
+    const completedChecklist = (p.checklist_items || []).filter(c => c.completed).length;
+    const totalChecklist = (p.checklist_items || []).length;
+
+    return `
+      <div class="project-card urgency-green" data-project-id="${p.id}">
+        <div class="card-header">
+          <div class="card-header-left">
+            <h3>${escapeHtml(p.title)}</h3>
+            ${p.agency ? `<div class="card-agency">${escapeHtml(p.agency)}</div>` : ''}
+            ${p.solicitation_number ? `<div class="card-sol">${escapeHtml(p.solicitation_number)}</div>` : ''}
+          </div>
+          <div class="card-actions">
+            <button onclick="openEditModal('${p.id}')" title="Edit"><i class="fas fa-pen"></i></button>
+            ${p.sam_link ? `<button onclick="window.open('${escapeHtml(p.sam_link)}', '_blank')" title="SAM.gov"><i class="fas fa-external-link-alt"></i></button>` : ''}
+          </div>
+        </div>
+
+        <div class="card-countdown" style="border-bottom: 1px solid #f3f4f6;">
+          <div class="countdown-number" style="font-size: 1.4rem; color: #10b981;"><i class="fas fa-trophy" style="margin-right: 6px;"></i>AWARDED</div>
+          <div class="countdown-label">${p.estimated_value ? escapeHtml(p.estimated_value) : ''}</div>
+        </div>
+
+        <div class="card-meta">
+          <div class="meta-item">
+            <i class="fas fa-user"></i>
+            <span class="owner-badge ${ownerClass}">${escapeHtml(p.owner || 'Chris')}</span>
+          </div>
+          ${p.priority && p.priority !== 'normal' ? `
+            <div class="meta-item">
+              <i class="fas fa-flag"></i>
+              <span style="font-weight: 700; text-transform: uppercase; font-size: 0.7rem; letter-spacing: 0.5px; color: ${p.priority === 'critical' ? 'var(--accent-red)' : '#f59e0b'};">${p.priority}</span>
+            </div>
+          ` : ''}
+        </div>
+
+        ${totalChecklist > 0 ? `
+          <div class="card-section">
+            <div class="card-section-title">Documents (${completedChecklist}/${totalChecklist})</div>
+            ${checklistHtml}
+          </div>
+        ` : ''}
+
+        <div class="intel-toggle ${expandedIntel[p.id] ? 'expanded' : ''}" onclick="toggleIntel('${p.id}')">
+          <i class="fas fa-bolt"></i>
+          <span>Intel Drop</span>
+          <i class="fas fa-chevron-right intel-chevron"></i>
+        </div>
+        <div class="intel-body ${expandedIntel[p.id] ? 'visible' : ''}" id="intelBody-${p.id}">
+          <textarea class="intel-textarea" id="intelText-${p.id}" placeholder="Paste email, amendment notice, meeting notes..."></textarea>
+          <div class="intel-dropzone" id="intelDrop-${p.id}">
+            <i class="fas fa-paperclip"></i> Drop a file or click to browse
+          </div>
+          <div class="intel-file-name" id="intelFileName-${p.id}" style="display:none;"></div>
+          <button class="intel-submit-btn" onclick="submitIntel('${p.id}')">
+            <i class="fas fa-paper-plane"></i> Process Intel
+          </button>
+          <div id="intelResult-${p.id}"></div>
+        </div>
+
+        <div class="activity-toggle ${expandedActivity[p.id] ? 'expanded' : ''}" onclick="toggleActivity('${p.id}')">
+          <i class="fas fa-history"></i>
+          <span>Recent Activity</span>
+          <i class="fas fa-chevron-right activity-chevron"></i>
+        </div>
+        <div class="activity-body ${expandedActivity[p.id] ? 'visible' : ''}" id="activityBody-${p.id}">
+          <div class="activity-empty">Loading...</div>
+        </div>
+      </div>
+    `;
+  }).join('');
+
+  // Setup drop zones for expanded intel sections
+  for (const pid of Object.keys(expandedIntel)) {
+    if (expandedIntel[pid]) setupIntelDropZone(pid);
+  }
+  for (const pid of Object.keys(expandedActivity)) {
+    if (expandedActivity[pid]) loadProjectActivity(pid);
+  }
+}
+
 // ============================================================
 // Real-time Subscriptions
 // ============================================================
@@ -220,9 +354,9 @@ async function loadProjects() {
 function setupRealtimeSubscriptions() {
   sb
     .channel('dashboard-changes')
-    .on('postgres_changes', { event: '*', schema: 'public', table: 'projects' }, () => loadProjects())
-    .on('postgres_changes', { event: '*', schema: 'public', table: 'milestones' }, () => loadProjects())
-    .on('postgres_changes', { event: '*', schema: 'public', table: 'checklist_items' }, () => loadProjects())
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'projects' }, () => { loadProjects(); if (activeProjectsInitialized) loadAwardedProjects(); })
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'milestones' }, () => { loadProjects(); if (activeProjectsInitialized) loadAwardedProjects(); })
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'checklist_items' }, () => { loadProjects(); if (activeProjectsInitialized) loadAwardedProjects(); })
     .on('postgres_changes', { event: '*', schema: 'public', table: 'scanner_opportunities' }, () => loadTopOpportunities())
     .on('postgres_changes', { event: '*', schema: 'public', table: 'opportunity_feedback' }, () => {
       loadUserFeedback().then(() => loadTopOpportunities());
@@ -277,11 +411,11 @@ function renderProjects() {
   if (loadingSpinner) loadingSpinner.remove();
 
   if (projects.length === 0) {
-    projectsGrid.innerHTML = `
+    pipelineGrid.innerHTML = `
       <div class="empty-state" style="grid-column: 1 / -1;">
-        <i class="fas fa-folder-open"></i>
-        <h3>No Active Projects</h3>
-        <p>Add your first project to start tracking deadlines.</p>
+        <i class="fas fa-stream"></i>
+        <h3>Pipeline Empty</h3>
+        <p>Add a project to start tracking pursuit deadlines.</p>
         <button class="add-project-btn" onclick="openAddModal()">
           <i class="fas fa-plus"></i> Add Project
         </button>
@@ -290,7 +424,7 @@ function renderProjects() {
     return;
   }
 
-  projectsGrid.innerHTML = projects.map((p) => {
+  pipelineGrid.innerHTML = projects.map((p) => {
     const daysLeft = getDaysUntil(p.response_deadline);
     const urgency = getUrgencyClass(daysLeft);
     const countdown = formatCountdown(daysLeft);
@@ -412,10 +546,10 @@ function renderProjects() {
 }
 
 function updateUrgencyCounts() {
-  let overdue = 0, due7 = 0, due14 = 0, active = 0;
+  let overdue = 0, due7 = 0, due14 = 0, pipeline = 0;
   for (const p of projects) {
     const days = getDaysUntil(p.response_deadline);
-    active++;
+    pipeline++;
     if (days < 0) overdue++;
     else if (days <= 7) due7++;
     else if (days <= 14) due14++;
@@ -423,7 +557,7 @@ function updateUrgencyCounts() {
   countOverdue.textContent = overdue;
   countDue7.textContent = due7;
   countDue14.textContent = due14;
-  countActive.textContent = active;
+  countPipeline.textContent = pipeline;
 }
 
 // ============================================================
@@ -478,6 +612,7 @@ function openAddModal() {
   projectForm.reset();
   $('formProjectId').value = '';
   $('formOwner').value = 'Chris';
+  $('formStatus').value = 'active';
   $('formPriority').value = 'normal';
   $('milestonesSection').style.display = 'none';
   $('checklistSection').style.display = 'none';
@@ -487,7 +622,7 @@ function openAddModal() {
 }
 
 async function openEditModal(projectId) {
-  const project = projects.find((p) => p.id === projectId);
+  const project = findProject(projectId);
   if (!project) return;
 
   editingProjectId = projectId;
@@ -497,6 +632,7 @@ async function openEditModal(projectId) {
   $('formAgency').value = project.agency || '';
   $('formSolicitation').value = project.solicitation_number || '';
   $('formOwner').value = project.owner || 'Chris';
+  $('formStatus').value = project.status || 'active';
   $('formPriority').value = project.priority || 'normal';
   $('formEstValue').value = project.estimated_value || '';
   $('formNaics').value = project.naics_code || '';
@@ -573,8 +709,9 @@ async function deleteChecklistItem(id) {
     return;
   }
   await loadProjects();
+  if (activeProjectsInitialized) await loadAwardedProjects();
   if (editingProjectId) {
-    const project = projects.find((p) => p.id === editingProjectId);
+    const project = findProject(editingProjectId);
     if (project) renderChecklistEditor(project.checklist_items || []);
   }
 }
@@ -588,7 +725,7 @@ $('addChecklistBtn').addEventListener('click', async () => {
   const label = input.value.trim();
   if (!label) return;
 
-  const project = projects.find((p) => p.id === editingProjectId);
+  const project = findProject(editingProjectId);
   const sortOrder = (project?.checklist_items?.length || 0);
 
   const { error } = await sb.from('checklist_items').insert({
@@ -604,7 +741,8 @@ $('addChecklistBtn').addEventListener('click', async () => {
 
   input.value = '';
   await loadProjects();
-  const updatedProject = projects.find((p) => p.id === editingProjectId);
+  if (activeProjectsInitialized) await loadAwardedProjects();
+  const updatedProject = findProject(editingProjectId);
   if (updatedProject) renderChecklistEditor(updatedProject.checklist_items || []);
 });
 
@@ -640,6 +778,7 @@ modalSave.addEventListener('click', async () => {
     agency: $('formAgency').value.trim() || null,
     solicitation_number: $('formSolicitation').value.trim() || null,
     response_deadline: new Date(deadline).toISOString(),
+    status: $('formStatus').value,
     owner: $('formOwner').value,
     priority: $('formPriority').value,
     estimated_value: $('formEstValue').value.trim() || null,
@@ -715,6 +854,7 @@ modalSave.addEventListener('click', async () => {
 
   closeModal();
   await loadProjects();
+  if (activeProjectsInitialized) await loadAwardedProjects();
   modalSave.disabled = false;
 });
 
@@ -722,7 +862,7 @@ modalSave.addEventListener('click', async () => {
 
 $('archiveBtn').addEventListener('click', async () => {
   if (!editingProjectId) return;
-  const project = projects.find((p) => p.id === editingProjectId);
+  const project = findProject(editingProjectId);
   if (!confirm(`Archive "${project?.title}"? It will be hidden from the active dashboard.`)) return;
 
   const { error } = await sb.from('projects').update({ status: 'archived' }).eq('id', editingProjectId);
@@ -1569,7 +1709,8 @@ if (topOppsTableBody) {
 
 const views = {
   scanner: { el: () => $('viewScanner'), init: initScannerView },
-  projects: { el: () => $('viewProjects'), init: initProjectsView },
+  pipeline: { el: () => $('viewPipeline'), init: initPipelineView },
+  projects: { el: () => $('viewProjects'), init: initActiveProjectsView },
   analyze: { el: () => $('viewAnalyze'), init: initAnalyzeView, adminOnly: true },
 };
 
@@ -1633,12 +1774,19 @@ async function initScannerView() {
   }
 }
 
-async function initProjectsView() {
-  if (!projectsInitialized) {
-    projectsInitialized = true;
+async function initPipelineView() {
+  if (!pipelineInitialized) {
+    pipelineInitialized = true;
   }
   await loadProjects();
   startCountdownTimer();
+}
+
+async function initActiveProjectsView() {
+  if (!activeProjectsInitialized) {
+    activeProjectsInitialized = true;
+  }
+  await loadAwardedProjects();
 }
 
 function initAnalyzeView() {
@@ -2205,6 +2353,7 @@ async function submitIntel(projectId) {
 
     // Reload projects to reflect changes
     await loadProjects();
+    if (activeProjectsInitialized) await loadAwardedProjects();
   } catch (err) {
     if (resultEl) {
       resultEl.innerHTML = `
@@ -2302,6 +2451,10 @@ window.addEventListener('hashchange', () => {
 // ============================================================
 // Utils
 // ============================================================
+
+function findProject(projectId) {
+  return projects.find(p => p.id === projectId) || awardedProjects.find(p => p.id === projectId);
+}
 
 function escapeHtml(str) {
   if (!str) return '';

@@ -14,7 +14,7 @@
       rel="stylesheet"
     />
     <link rel="stylesheet" href="style.css" />
-    <link rel="stylesheet" href="dashboard.css?v=13" />
+    <link rel="stylesheet" href="dashboard.css?v=14" />
   </head>
   <body>
     <!-- ============ Login Overlay ============ -->
@@ -78,8 +78,11 @@
             <a href="#scanner" class="sidebar-link active" data-view="scanner">
               <i class="fas fa-radar"></i><span>Scanner</span>
             </a>
+            <a href="#pipeline" class="sidebar-link" data-view="pipeline">
+              <i class="fas fa-stream"></i><span>Pipeline</span>
+            </a>
             <a href="#projects" class="sidebar-link" data-view="projects">
-              <i class="fas fa-folder-open"></i><span>Projects</span>
+              <i class="fas fa-folder-open"></i><span>Active Projects</span>
             </a>
           </div>
           <div class="sidebar-divider"></div>
@@ -90,9 +93,6 @@
           </div>
           <div class="sidebar-divider"></div>
           <div class="sidebar-section">
-            <a class="sidebar-link disabled" title="Coming Soon">
-              <i class="fas fa-stream"></i><span>Pipeline</span>
-            </a>
             <a class="sidebar-link disabled" title="Coming Soon">
               <i class="fas fa-chart-line"></i><span>Reports</span>
             </a>
@@ -132,8 +132,8 @@
             </div>
           </div>
 
-          <!-- Projects View -->
-          <div class="view" id="viewProjects">
+          <!-- Pipeline View (pursuing / in-progress bids) -->
+          <div class="view" id="viewPipeline">
             <div class="urgency-strip">
               <div class="urgency-box overdue">
                 <div class="urgency-count" id="countOverdue">0</div>
@@ -148,21 +148,29 @@
                 <div class="urgency-label">Due &lt;14 Days</div>
               </div>
               <div class="urgency-box active-count">
-                <div class="urgency-count" id="countActive">0</div>
-                <div class="urgency-label">Active</div>
+                <div class="urgency-count" id="countPipeline">0</div>
+                <div class="urgency-label">In Pipeline</div>
               </div>
             </div>
 
             <div class="dash-toolbar">
-              <h2>Active Projects</h2>
+              <h2>Pipeline</h2>
               <button class="add-project-btn" id="addProjectBtn">
                 <i class="fas fa-plus"></i> Add Project
               </button>
             </div>
 
-            <div class="projects-grid" id="projectsGrid">
+            <div class="projects-grid" id="pipelineGrid">
               <div class="loading-spinner" id="loadingSpinner"></div>
             </div>
+          </div>
+
+          <!-- Active Projects View (awarded contracts) -->
+          <div class="view" id="viewProjects">
+            <div class="dash-toolbar">
+              <h2>Active Projects</h2>
+            </div>
+            <div class="projects-grid" id="activeProjectsGrid"></div>
           </div>
 
           <!-- Analyze View (admin only — access controlled by JS router) -->
@@ -187,8 +195,11 @@
         <a href="#scanner" class="mobile-nav-btn active" data-view="scanner">
           <i class="fas fa-radar"></i>Scanner
         </a>
+        <a href="#pipeline" class="mobile-nav-btn" data-view="pipeline">
+          <i class="fas fa-stream"></i>Pipeline
+        </a>
         <a href="#projects" class="mobile-nav-btn" data-view="projects">
-          <i class="fas fa-folder-open"></i>Projects
+          <i class="fas fa-folder-open"></i>Active
         </a>
       </div>
     </div>
@@ -236,6 +247,15 @@
 
             <div class="form-row">
               <div class="form-group">
+                <label for="formStatus">Status</label>
+                <select id="formStatus">
+                  <option value="active">Pipeline</option>
+                  <option value="submitted">Submitted</option>
+                  <option value="won">Awarded</option>
+                  <option value="lost">Lost</option>
+                </select>
+              </div>
+              <div class="form-group">
                 <label for="formPriority">Priority</label>
                 <select id="formPriority">
                   <option value="normal">Normal</option>
@@ -244,10 +264,11 @@
                   <option value="low">Low</option>
                 </select>
               </div>
-              <div class="form-group">
-                <label for="formEstValue">Estimated Value</label>
-                <input type="text" id="formEstValue" placeholder="e.g., $500K" />
-              </div>
+            </div>
+
+            <div class="form-group">
+              <label for="formEstValue">Estimated Value</label>
+              <input type="text" id="formEstValue" placeholder="e.g., $500K" />
             </div>
 
             <div class="form-row">
@@ -321,6 +342,6 @@
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/mammoth@1.8.0/mammoth.browser.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
-    <script src="dashboard.js?v=13"></script>
+    <script src="dashboard.js?v=14"></script>
   </body>
 </html>
