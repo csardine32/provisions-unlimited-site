@@ -29,6 +29,7 @@ let adhocAnalyses = [];
 let adhocInitialized = false;
 let showAllAdhoc = false;
 let pendingAdhocId = null;
+let pendingAdhocNoticeId = null;
 
 // --- Standard milestone template (days before deadline) ---
 const MILESTONE_TEMPLATE = [
@@ -110,6 +111,7 @@ function showLogin() {
   adhocAnalyses = [];
   showAllAdhoc = false;
   pendingAdhocId = null;
+  pendingAdhocNoticeId = null;
 }
 
 async function showDashboard() {
@@ -563,6 +565,7 @@ function closeModal() {
   modalOverlay.classList.remove('visible');
   editingProjectId = null;
   pendingAdhocId = null;
+  pendingAdhocNoticeId = null;
 }
 
 modalClose.addEventListener('click', closeModal);
@@ -613,6 +616,7 @@ modalSave.addEventListener('click', async () => {
   } else {
     // Create new
     projectData.created_by = currentUser.id;
+    if (pendingAdhocNoticeId) projectData.notice_id = pendingAdhocNoticeId;
 
     const { data, error } = await sb.from('projects').insert(projectData).select().single();
     if (error) {
@@ -1883,17 +1887,56 @@ async function undismissAdhocAnalysis(id) {
 }
 
 async function pursueAdhocMatched(id, noticeId) {
-  await trackOpportunity(noticeId);
+  // Fetch the matched opportunity to pre-fill the modal
+  const { data: opp } = await sb
+    .from('scanner_opportunities')
+    .select('*')
+    .eq('notice_id', noticeId)
+    .single();
 
-  // Find the newly created project to link
-  const tracked = projects.find(p => p.notice_id === noticeId);
-  const updates = { status: 'pursued' };
-  if (tracked) updates.project_id = tracked.id;
+  const analysis = adhocAnalyses.find(a => a.id === id);
+  if (!analysis) return;
 
-  await sb.from('adhoc_analyses').update(updates).eq('id', id);
-  const item = adhocAnalyses.find(a => a.id === id);
-  if (item) item.status = 'pursued';
-  renderAdhocAnalysesList();
+  let parsed;
+  try { parsed = JSON.parse(analysis.analysis_json); } catch { parsed = {}; }
+
+  // Open modal pre-filled from matched opportunity + analysis
+  pendingAdhocId = id;
+  pendingAdhocNoticeId = noticeId;
+  editingProjectId = null;
+  modalTitle.textContent = 'Add Project';
+  projectForm.reset();
+  $('formProjectId').value = '';
+  $('formTitle').value = opp?.title || analysis.title || '';
+  $('formAgency').value = opp?.agency || '';
+  $('formSolicitation').value = opp?.solicitation_number || analysis.solicitation_number || '';
+  $('formOwner').value = 'Chris';
+  $('formPriority').value = opp?.last_score >= 80 ? 'high' : 'normal';
+  $('formNaics').value = opp?.naics_code || '';
+  $('formSetAside').value = opp?.set_aside || '';
+  $('formSamLink').value = opp?.ui_link || '';
+  $('formEstValue').value = opp?.estimated_value || '';
+
+  // Pre-fill deadline from opportunity, analysis, or 30-day fallback
+  const deadlineRaw = opp?.response_deadline || parsed.response_deadline;
+  const dlSource = deadlineRaw ? new Date(deadlineRaw) : null;
+  const dl = dlSource && !isNaN(dlSource.getTime()) ? dlSource : new Date(Date.now() + 30 * 86400000);
+  const dlOffset = dl.getTimezoneOffset();
+  const dlLocal = new Date(dl.getTime() - dlOffset * 60000);
+  $('formDeadline').value = dlLocal.toISOString().slice(0, 16);
+
+  // Notes from analysis
+  const notesParts = [];
+  if (opp?.ai_summary) notesParts.push(opp.ai_summary);
+  if (parsed.scope_of_work) notesParts.push('Scope: ' + parsed.scope_of_work);
+  if (parsed.bid_readiness) notesParts.push('Bid Readiness: ' + parsed.bid_readiness);
+  $('formNotes').value = notesParts.join('\n\n');
+
+  $('milestonesSection').style.display = 'none';
+  $('checklistSection').style.display = 'none';
+  $('deleteSection').style.display = 'none';
+  modalSave.textContent = 'Save Project';
+  modalOverlay.classList.add('visible');
 }
 
 function pursueAdhocUnmatched(id) {
@@ -1926,7 +1969,6 @@ function pursueAdhocUnmatched(id) {
   const dlOffset = dl.getTimezoneOffset();
   const dlLocal = new Date(dl.getTime() - dlOffset * 60000);
   const dlValue = dlLocal.toISOString().slice(0, 16);
-  console.log('[Pursue] deadline:', parsed.response_deadline, '→', dlValue);
   $('formDeadline').value = dlValue;
 
   $('milestonesSection').style.display = 'none';
