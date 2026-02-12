@@ -1914,15 +1914,12 @@ function pursueAdhocUnmatched(id) {
   $('formOwner').value = 'Chris';
   $('formPriority').value = 'normal';
 
-  // Pre-fill deadline from extracted response_deadline
-  if (parsed.response_deadline) {
-    const dl = new Date(parsed.response_deadline);
-    if (!isNaN(dl.getTime())) {
-      const offset = dl.getTimezoneOffset();
-      const local = new Date(dl.getTime() - offset * 60000);
-      $('formDeadline').value = local.toISOString().slice(0, 16);
-    }
-  }
+  // Pre-fill deadline from extracted response_deadline, fallback to 30 days out
+  const dlSource = parsed.response_deadline ? new Date(parsed.response_deadline) : null;
+  const dl = dlSource && !isNaN(dlSource.getTime()) ? dlSource : new Date(Date.now() + 30 * 86400000);
+  const dlOffset = dl.getTimezoneOffset();
+  const dlLocal = new Date(dl.getTime() - dlOffset * 60000);
+  $('formDeadline').value = dlLocal.toISOString().slice(0, 16);
 
   // Build notes from analysis summary
   const notesParts = [];
