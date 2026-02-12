@@ -1417,6 +1417,25 @@ async function trackOpportunity(noticeId) {
     return;
   }
 
+  // Parse analysis data
+  const attachment = safeJsonParse(opp.attachment_analysis_json);
+  const aiKeyDates = safeJsonParse(opp.ai_key_dates_json);
+  const aiMustCheck = safeJsonParse(opp.ai_must_check_json);
+  const aiRisks = safeJsonParse(opp.ai_risks_json);
+  const aiSkillsets = safeJsonParse(opp.ai_skillsets_json);
+  const hasAnalysis = attachment || (aiMustCheck && aiMustCheck.length > 0);
+
+  // Build rich notes from analysis
+  const notesParts = [];
+  if (opp.ai_summary) notesParts.push(opp.ai_summary);
+  if (aiRisks && aiRisks.length > 0) {
+    notesParts.push('\n--- RISKS ---');
+    aiRisks.forEach(r => notesParts.push('• ' + (typeof r === 'string' ? r : r.description || JSON.stringify(r))));
+  }
+  if (attachment?.bid_readiness) {
+    notesParts.push('\n--- BID READINESS ---\n' + attachment.bid_readiness);
+  }
+
   // Create project
   const projectData = {
     title: opp.title,
@@ -1427,10 +1446,11 @@ async function trackOpportunity(noticeId) {
     owner: 'Chris',
     status: 'active',
     priority: opp.last_score >= 80 ? 'high' : 'normal',
+    estimated_value: opp.estimated_value || null,
     naics_code: opp.naics_code || null,
     set_aside: opp.set_aside || null,
     sam_link: opp.ui_link || null,
-    notes: opp.ai_summary || null,
+    notes: notesParts.join('\n') || null,
     created_by: currentUser.id,
   };
 
@@ -1446,26 +1466,89 @@ async function trackOpportunity(noticeId) {
     return;
   }
 
-  // Auto-generate milestones
-  if (opp.response_deadline) {
-    const deadlineDate = new Date(opp.response_deadline);
-    const milestones = MILESTONE_TEMPLATE.map((m, i) => {
+  // Build milestones from analysis key dates + standard template
+  const milestones = [];
+  const deadlineDate = opp.response_deadline ? new Date(opp.response_deadline) : null;
+
+  // Add AI key dates as milestones
+  if (aiKeyDates?.other_dates && Array.isArray(aiKeyDates.other_dates)) {
+    aiKeyDates.other_dates.forEach((d, i) => {
+      if (d.date && d.label) {
+        milestones.push({
+          project_id: project.id,
+          title: d.label,
+          due_date: new Date(d.date).toISOString(),
+          sort_order: i,
+        });
+      }
+    });
+  }
+
+  // Always add standard milestones (with adjusted sort_order)
+  if (deadlineDate) {
+    const baseOrder = milestones.length;
+    MILESTONE_TEMPLATE.forEach((m, i) => {
       const dueDate = new Date(deadlineDate);
       dueDate.setDate(dueDate.getDate() - m.daysBeforeDeadline);
-      return {
-        project_id: project.id,
-        title: m.title,
-        due_date: dueDate.toISOString(),
-        sort_order: i,
-      };
+      // Skip if a similar milestone already exists from key dates
+      const isDupe = milestones.some(existing =>
+        existing.title.toLowerCase().includes(m.title.toLowerCase().split(' ')[0])
+      );
+      if (!isDupe) {
+        milestones.push({
+          project_id: project.id,
+          title: m.title,
+          due_date: dueDate.toISOString(),
+          sort_order: baseOrder + i,
+        });
+      }
     });
+  }
 
+  if (milestones.length > 0) {
+    // Sort by date, re-index sort_order
+    milestones.sort((a, b) => new Date(a.due_date) - new Date(b.due_date));
+    milestones.forEach((m, i) => m.sort_order = i);
     const { error: mError } = await sb.from('milestones').insert(milestones);
     if (mError) console.error('Failed to create milestones:', mError);
   }
 
-  // Auto-generate document checklist
-  const checklistItems = DEFAULT_CHECKLIST.map((label, i) => ({
+  // Build checklist from analysis data
+  const checklistLabels = [];
+
+  // Add must-check items from AI analysis
+  if (Array.isArray(aiMustCheck)) {
+    aiMustCheck.forEach(item => {
+      const label = typeof item === 'string' ? item.split(':')[0].trim() : (item.label || item.title || '');
+      if (label && label.length <= 120) checklistLabels.push(label);
+      else if (label) checklistLabels.push(label.slice(0, 120));
+    });
+  }
+
+  // Add compliance requirements from attachment analysis
+  if (attachment?.compliance_requirements && Array.isArray(attachment.compliance_requirements)) {
+    attachment.compliance_requirements.forEach(req => {
+      const label = typeof req === 'string' ? req.split(' - ')[0].trim().slice(0, 120) : '';
+      if (label && !checklistLabels.some(existing => existing.toLowerCase().includes(label.toLowerCase().slice(0, 30)))) {
+        checklistLabels.push(label);
+      }
+    });
+  }
+
+  // Add required qualifications from attachment analysis
+  if (attachment?.required_qualifications && Array.isArray(attachment.required_qualifications)) {
+    attachment.required_qualifications.forEach(qual => {
+      const label = typeof qual === 'string' ? qual.slice(0, 120) : '';
+      if (label && !checklistLabels.some(existing => existing.toLowerCase().includes(label.toLowerCase().slice(0, 30)))) {
+        checklistLabels.push('Verify: ' + label);
+      }
+    });
+  }
+
+  // Fall back to default checklist if no analysis data produced items
+  const finalChecklist = checklistLabels.length > 0 ? checklistLabels : DEFAULT_CHECKLIST;
+
+  const checklistItems = finalChecklist.map((label, i) => ({
     project_id: project.id,
     label,
     sort_order: i,
@@ -1474,12 +1557,21 @@ async function trackOpportunity(noticeId) {
   const { error: cError } = await sb.from('checklist_items').insert(checklistItems);
   if (cError) console.error('Failed to create checklist:', cError);
 
-  // Log activity
-  await logActivity(project.id, 'Tracked from Top Opportunities', `notice_id: ${opp.notice_id}, score: ${opp.last_score}`);
+  // Log activity with analysis context
+  const analysisNote = hasAnalysis ? ' (with analysis data)' : '';
+  await logActivity(project.id, 'Tracked from Top Opportunities' + analysisNote, `notice_id: ${opp.notice_id}, score: ${opp.last_score}`);
 
   // Reload both lists
   await loadProjects();
   await loadFilteredOpportunities();
+
+  // Show toast
+  showDDToast('Project created' + (hasAnalysis ? ' with analysis data' : ''));
+}
+
+function safeJsonParse(str) {
+  if (!str) return null;
+  try { return JSON.parse(str); } catch { return null; }
 }
 
 window.trackOpportunity = trackOpportunity;
