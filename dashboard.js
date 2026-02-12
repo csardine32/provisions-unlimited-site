@@ -30,6 +30,9 @@ let adhocInitialized = false;
 let showAllAdhoc = false;
 let pendingAdhocId = null;
 let pendingAdhocNoticeId = null;
+let intelPendingFiles = {};  // per-project file data keyed by project ID
+let expandedIntel = {};       // track which project intel sections are open
+let expandedActivity = {};    // track which project activity sections are open
 
 // --- Standard milestone template (days before deadline) ---
 const MILESTONE_TEMPLATE = [
@@ -112,6 +115,9 @@ function showLogin() {
   showAllAdhoc = false;
   pendingAdhocId = null;
   pendingAdhocNoticeId = null;
+  intelPendingFiles = {};
+  expandedIntel = {};
+  expandedActivity = {};
 }
 
 async function showDashboard() {
@@ -226,6 +232,12 @@ function setupRealtimeSubscriptions() {
     })
     .on('postgres_changes', { event: '*', schema: 'public', table: 'adhoc_analyses' }, () => {
       if (adhocInitialized) loadAdhocAnalyses();
+    })
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'activity_log' }, (payload) => {
+      const projectId = payload?.new?.project_id;
+      if (projectId && expandedActivity[projectId]) {
+        loadProjectActivity(projectId);
+      }
     })
     .subscribe();
 }
@@ -359,9 +371,44 @@ function renderProjects() {
             ${checklistHtml}
           </div>
         ` : ''}
+
+        <div class="intel-toggle ${expandedIntel[p.id] ? 'expanded' : ''}" onclick="toggleIntel('${p.id}')">
+          <i class="fas fa-bolt"></i>
+          <span>Intel Drop</span>
+          <i class="fas fa-chevron-right intel-chevron"></i>
+        </div>
+        <div class="intel-body ${expandedIntel[p.id] ? 'visible' : ''}" id="intelBody-${p.id}">
+          <textarea class="intel-textarea" id="intelText-${p.id}" placeholder="Paste email, amendment notice, meeting notes..."></textarea>
+          <div class="intel-dropzone" id="intelDrop-${p.id}">
+            <i class="fas fa-paperclip"></i> Drop a file or click to browse
+          </div>
+          <div class="intel-file-name" id="intelFileName-${p.id}" style="display:none;"></div>
+          <button class="intel-submit-btn" onclick="submitIntel('${p.id}')">
+            <i class="fas fa-paper-plane"></i> Process Intel
+          </button>
+          <div id="intelResult-${p.id}"></div>
+        </div>
+
+        <div class="activity-toggle ${expandedActivity[p.id] ? 'expanded' : ''}" onclick="toggleActivity('${p.id}')">
+          <i class="fas fa-history"></i>
+          <span>Recent Activity</span>
+          <i class="fas fa-chevron-right activity-chevron"></i>
+        </div>
+        <div class="activity-body ${expandedActivity[p.id] ? 'visible' : ''}" id="activityBody-${p.id}">
+          <div class="activity-empty">Loading...</div>
+        </div>
       </div>
     `;
   }).join('');
+
+  // Re-setup drop zones for expanded intel sections
+  for (const pid of Object.keys(expandedIntel)) {
+    if (expandedIntel[pid]) setupIntelDropZone(pid);
+  }
+  // Re-load activity for expanded sections
+  for (const pid of Object.keys(expandedActivity)) {
+    if (expandedActivity[pid]) loadProjectActivity(pid);
+  }
 }
 
 function updateUrgencyCounts() {
@@ -1990,6 +2037,260 @@ window.undismissAdhocAnalysis = undismissAdhocAnalysis;
 window.pursueAdhocMatched = pursueAdhocMatched;
 window.pursueAdhocUnmatched = pursueAdhocUnmatched;
 window.showDismissedAnalyses = showDismissedAnalyses;
+
+// ============================================================
+// Intel Drop
+// ============================================================
+
+function toggleIntel(projectId) {
+  expandedIntel[projectId] = !expandedIntel[projectId];
+  const toggle = document.querySelector(`[onclick="toggleIntel('${projectId}')"]`);
+  const body = document.getElementById('intelBody-' + projectId);
+  if (toggle) toggle.classList.toggle('expanded', expandedIntel[projectId]);
+  if (body) body.classList.toggle('visible', expandedIntel[projectId]);
+  if (expandedIntel[projectId]) setupIntelDropZone(projectId);
+}
+
+function setupIntelDropZone(projectId) {
+  const dropZone = document.getElementById('intelDrop-' + projectId);
+  if (!dropZone || dropZone._intelInit) return;
+  dropZone._intelInit = true;
+
+  const fileInput = document.createElement('input');
+  fileInput.type = 'file';
+  fileInput.accept = '.pdf,.docx,.txt,.csv,.md';
+  fileInput.hidden = true;
+  dropZone.appendChild(fileInput);
+
+  dropZone.addEventListener('click', () => fileInput.click());
+  dropZone.addEventListener('dragover', (e) => {
+    e.preventDefault();
+    dropZone.classList.add('drag-over');
+  });
+  dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
+  dropZone.addEventListener('drop', (e) => {
+    e.preventDefault();
+    dropZone.classList.remove('drag-over');
+    if (e.dataTransfer.files[0]) handleIntelFile(projectId, e.dataTransfer.files[0]);
+  });
+  fileInput.addEventListener('change', () => {
+    if (fileInput.files[0]) handleIntelFile(projectId, fileInput.files[0]);
+    fileInput.value = '';
+  });
+}
+
+async function handleIntelFile(projectId, file) {
+  const ext = '.' + file.name.split('.').pop().toLowerCase();
+  const supported = ['.pdf', '.docx', '.txt', '.csv', '.md'];
+
+  if (!supported.includes(ext)) {
+    showDDToast('Unsupported file type');
+    return;
+  }
+
+  const fileNameEl = document.getElementById('intelFileName-' + projectId);
+
+  try {
+    let fileData = {};
+
+    if (ext === '.pdf') {
+      const arrayBuffer = await file.arrayBuffer();
+      const bytes = new Uint8Array(arrayBuffer);
+      let binary = '';
+      for (const b of bytes) binary += String.fromCharCode(b);
+      fileData = { pdf_base64: btoa(binary), filename: file.name };
+    } else if (ext === '.docx') {
+      const arrayBuffer = await file.arrayBuffer();
+      const result = await mammoth.extractRawText({ arrayBuffer });
+      if (!result.value?.trim()) throw new Error('Could not extract text from DOCX');
+      fileData = { text_content: result.value, filename: file.name };
+    } else {
+      const text = await file.text();
+      if (!text.trim()) throw new Error('File is empty');
+      fileData = { text_content: text, filename: file.name };
+    }
+
+    intelPendingFiles[projectId] = fileData;
+
+    if (fileNameEl) {
+      fileNameEl.style.display = 'flex';
+      fileNameEl.innerHTML = `<i class="fas fa-file"></i> ${escapeHtml(file.name)} <span class="intel-file-remove" onclick="clearIntelFile('${projectId}')">&times;</span>`;
+    }
+  } catch (err) {
+    showDDToast(err.message);
+  }
+}
+
+function clearIntelFile(projectId) {
+  delete intelPendingFiles[projectId];
+  const fileNameEl = document.getElementById('intelFileName-' + projectId);
+  if (fileNameEl) {
+    fileNameEl.style.display = 'none';
+    fileNameEl.innerHTML = '';
+  }
+}
+
+async function submitIntel(projectId) {
+  const textArea = document.getElementById('intelText-' + projectId);
+  const resultEl = document.getElementById('intelResult-' + projectId);
+  const textContent = textArea?.value?.trim() || '';
+  const fileData = intelPendingFiles[projectId] || {};
+
+  if (!textContent && !fileData.pdf_base64 && !fileData.text_content) {
+    showDDToast('Paste some text or attach a file first');
+    return;
+  }
+
+  // Build request body
+  const body = { project_id: projectId };
+  if (fileData.pdf_base64) {
+    body.pdf_base64 = fileData.pdf_base64;
+    body.filename = fileData.filename;
+  }
+  // Combine textarea text with any extracted file text
+  const combinedText = [textContent, fileData.text_content].filter(Boolean).join('\n\n---\n\n');
+  if (combinedText) body.text_content = combinedText;
+
+  // Show spinner
+  const submitBtn = document.querySelector(`[onclick="submitIntel('${projectId}')"]`);
+  if (submitBtn) {
+    submitBtn.disabled = true;
+    submitBtn.innerHTML = '<span class="dd-analyze-spinner"></span> Processing...';
+  }
+  if (resultEl) resultEl.innerHTML = '';
+
+  try {
+    const response = await fetch(`${SUPABASE_URL}/functions/v1/process-intel`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${(await sb.auth.getSession()).data.session?.access_token}`,
+      },
+      body: JSON.stringify(body),
+    });
+
+    const result = await response.json();
+
+    if (!response.ok) {
+      throw new Error(result.error || 'Intel processing failed');
+    }
+
+    // Build changes summary
+    const c = result.changes_applied || {};
+    const parts = [];
+    if (c.checklist_completed > 0) parts.push(`${c.checklist_completed} item${c.checklist_completed > 1 ? 's' : ''} checked off`);
+    if (c.checklist_added > 0) parts.push(`${c.checklist_added} item${c.checklist_added > 1 ? 's' : ''} added`);
+    if (c.milestones_completed > 0) parts.push(`${c.milestones_completed} milestone${c.milestones_completed > 1 ? 's' : ''} completed`);
+    if (c.milestone_dates_changed > 0) parts.push(`${c.milestone_dates_changed} date${c.milestone_dates_changed > 1 ? 's' : ''} updated`);
+    if (c.status_updated) parts.push('status updated');
+    if (c.priority_updated) parts.push('priority updated');
+    if (c.notes_appended) parts.push('notes updated');
+
+    const changesText = parts.length > 0 ? parts.join(', ') : 'No changes needed';
+
+    if (resultEl) {
+      resultEl.innerHTML = `
+        <div class="intel-result intel-success">
+          <i class="fas fa-check-circle intel-result-icon"></i>
+          <strong>${escapeHtml(result.summary || 'Intel processed')}</strong>
+          <div class="intel-changes-count">${escapeHtml(changesText)}</div>
+        </div>`;
+    }
+
+    // Clear inputs
+    if (textArea) textArea.value = '';
+    clearIntelFile(projectId);
+
+    showDDToast('Intel processed successfully');
+
+    // Reload projects to reflect changes
+    await loadProjects();
+  } catch (err) {
+    if (resultEl) {
+      resultEl.innerHTML = `
+        <div class="intel-result intel-error">
+          <i class="fas fa-exclamation-circle"></i> ${escapeHtml(err.message)}
+        </div>`;
+    }
+  } finally {
+    if (submitBtn) {
+      submitBtn.disabled = false;
+      submitBtn.innerHTML = '<i class="fas fa-paper-plane"></i> Process Intel';
+    }
+  }
+}
+
+window.toggleIntel = toggleIntel;
+window.clearIntelFile = clearIntelFile;
+window.submitIntel = submitIntel;
+
+// ============================================================
+// Activity Feed
+// ============================================================
+
+function toggleActivity(projectId) {
+  expandedActivity[projectId] = !expandedActivity[projectId];
+  const toggle = document.querySelector(`[onclick="toggleActivity('${projectId}')"]`);
+  const body = document.getElementById('activityBody-' + projectId);
+  if (toggle) toggle.classList.toggle('expanded', expandedActivity[projectId]);
+  if (body) body.classList.toggle('visible', expandedActivity[projectId]);
+  if (expandedActivity[projectId]) loadProjectActivity(projectId);
+}
+
+async function loadProjectActivity(projectId) {
+  const body = document.getElementById('activityBody-' + projectId);
+  if (!body) return;
+
+  const { data, error } = await sb
+    .from('activity_log')
+    .select('*')
+    .eq('project_id', projectId)
+    .order('created_at', { ascending: false })
+    .limit(10);
+
+  if (error) {
+    body.innerHTML = '<div class="activity-empty">Failed to load activity</div>';
+    return;
+  }
+
+  if (!data || data.length === 0) {
+    body.innerHTML = '<div class="activity-empty">No activity yet</div>';
+    return;
+  }
+
+  body.innerHTML = data.map(entry => {
+    const isIntel = entry.source === 'intel_drop';
+    const iconClass = isIntel ? 'activity-icon-intel' : 'activity-icon-manual';
+    const iconHtml = isIntel
+      ? '<i class="fas fa-bolt"></i>'
+      : '<i class="fas fa-circle" style="font-size:0.4rem;"></i>';
+    const timeAgo = getTimeAgo(entry.created_at);
+
+    return `
+      <div class="activity-entry">
+        <div class="activity-icon ${iconClass}">${iconHtml}</div>
+        <div class="activity-text">${escapeHtml(entry.action)}</div>
+        <div class="activity-time">${timeAgo}</div>
+      </div>`;
+  }).join('');
+}
+
+function getTimeAgo(dateStr) {
+  const now = new Date();
+  const then = new Date(dateStr);
+  const diffMs = now - then;
+  const diffMin = Math.floor(diffMs / 60000);
+  const diffHr = Math.floor(diffMs / 3600000);
+  const diffDay = Math.floor(diffMs / 86400000);
+
+  if (diffMin < 1) return 'just now';
+  if (diffMin < 60) return `${diffMin}m ago`;
+  if (diffHr < 24) return `${diffHr}h ago`;
+  if (diffDay < 30) return `${diffDay}d ago`;
+  return then.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+}
+
+window.toggleActivity = toggleActivity;
 
 // Hash change listener
 window.addEventListener('hashchange', () => {
