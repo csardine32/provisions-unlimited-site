@@ -1029,6 +1029,7 @@ async function loadScoringProfile() {
 // --- Profile Settings ---
 
 function openProfileSettings() {
+  if (!isAdmin()) return;
   const modal = $('profileModalOverlay');
   if (!modal) return;
 
