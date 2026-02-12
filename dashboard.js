@@ -1171,7 +1171,7 @@ async function loadFilteredOpportunities(page) {
   if (error) {
     console.error('Failed to load opportunities:', error);
     topOppsSection.style.display = 'block';
-    topOppsTableBody.innerHTML = `<tr><td colspan="8" style="text-align:center;padding:40px;color:var(--accent-red);font-weight:600;">Error loading opportunities: ${escapeHtml(error.message || 'Unknown error')}</td></tr>`;
+    topOppsTableBody.innerHTML = `<tr><td colspan="9" style="text-align:center;padding:40px;color:var(--accent-red);font-weight:600;">Error loading opportunities: ${escapeHtml(error.message || 'Unknown error')}</td></tr>`;
     return;
   }
 
@@ -1191,7 +1191,7 @@ async function loadFilteredOpportunities(page) {
 
   if (allOpportunities.length === 0) {
     topOppsSection.style.display = 'block';
-    topOppsTableBody.innerHTML = '<tr><td colspan="8" style="text-align:center;padding:40px;color:#9ca3af;font-weight:600;">No opportunities match your filters</td></tr>';
+    topOppsTableBody.innerHTML = '<tr><td colspan="9" style="text-align:center;padding:40px;color:#9ca3af;font-weight:600;">No opportunities match your filters</td></tr>';
     $('filterResultCount').textContent = '0 results';
     // Remove pagination
     const pag = document.querySelector('.scanner-pagination');
@@ -1290,6 +1290,7 @@ async function loadFilteredOpportunities(page) {
           ${reasonsHtml}
         </td>
         <td>${escapeHtml(opp.agency || '')}</td>
+        <td><span class="opp-notice-type">${escapeHtml(opp.notice_type || '')}</span></td>
         <td class="opp-value-cell">${valueHtml}</td>
         <td class="opp-deadline-cell ${deadlineClass}">${deadlineStr}${daysLeft !== null && daysLeft <= 14 ? ` <small>(${daysLeft}d)</small>` : ''}</td>
         <td><span class="opp-set-aside">${escapeHtml(opp.set_aside || '')}</span></td>
@@ -1989,7 +1990,7 @@ function navigateTo(viewName) {
 async function initScannerView() {
   // Show loading state immediately
   topOppsSection.style.display = 'block';
-  topOppsTableBody.innerHTML = '<tr><td colspan="8" style="text-align:center;padding:40px;color:#9ca3af;font-weight:600;">Loading opportunities...</td></tr>';
+  topOppsTableBody.innerHTML = '<tr><td colspan="9" style="text-align:center;padding:40px;color:#9ca3af;font-weight:600;">Loading opportunities...</td></tr>';
 
   try {
     if (!scannerInitialized) {
@@ -2002,7 +2003,7 @@ async function initScannerView() {
     await loadFilteredOpportunities();
   } catch (err) {
     console.error('[Scanner] initScannerView error:', err);
-    topOppsTableBody.innerHTML = `<tr><td colspan="8" style="text-align:center;padding:40px;color:var(--accent-red);font-weight:600;">Failed to load opportunities. Check console for details.</td></tr>`;
+    topOppsTableBody.innerHTML = `<tr><td colspan="9" style="text-align:center;padding:40px;color:var(--accent-red);font-weight:600;">Failed to load opportunities. Check console for details.</td></tr>`;
   }
 }
 

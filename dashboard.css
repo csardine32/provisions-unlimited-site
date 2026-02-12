@@ -401,6 +401,12 @@ body.is-admin .admin-only { display: block; }
   font-weight: 600;
   color: #6b7280;
 }
+.opp-notice-type {
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: #9ca3af;
+  white-space: nowrap;
+}
 .opp-track-btn {
   padding: 5px 14px;
   background: var(--primary-navy);
