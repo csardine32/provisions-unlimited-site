@@ -1054,55 +1054,154 @@ async function loadScoringProfile() {
   }
 }
 
-// --- Profile Settings (Multi-User Admin) ---
+// --- Admin Panel (Multi-User Profiles, Roles, User Creation) ---
 
 let allProfiles = [];          // all scoring profiles (admin sees all, user sees own)
 let profileEditingUserId = null; // which user's profile is being edited
 let profileEditingId = null;     // the profile row ID (null = new)
+
+function switchAdminTab(tabName) {
+  document.querySelectorAll('.admin-tab').forEach(t => t.classList.toggle('active', t.dataset.tab === tabName));
+  document.querySelectorAll('.admin-tab-content').forEach(c => c.classList.remove('active'));
+  const target = $('adminTab' + tabName.charAt(0).toUpperCase() + tabName.slice(1));
+  if (target) target.classList.add('active');
+
+  // Lazy-load tab data
+  if (tabName === 'users') loadAdminUsersList();
+  if (tabName === 'profiles') loadProfilesTab();
+}
+window.switchAdminTab = switchAdminTab;
 
 async function openProfileSettings() {
   if (!isAdmin()) return;
   const modal = $('profileModalOverlay');
   if (!modal) return;
 
-  // Load all profiles (admin RLS returns all users' profiles)
+  // Reset to Team tab
+  switchAdminTab('users');
+  modal.style.display = 'flex';
+}
+window.openProfileSettings = openProfileSettings;
+
+function closeProfileSettings() {
+  const modal = $('profileModalOverlay');
+  if (modal) modal.style.display = 'none';
+}
+window.closeProfileSettings = closeProfileSettings;
+
+// --- Team Tab: User List with Roles ---
+
+async function loadAdminUsersList() {
+  const container = $('adminUsersList');
+  container.innerHTML = '<div style="text-align:center;padding:20px;color:#9ca3af;">Loading team...</div>';
+
+  try {
+    const session = await sb.auth.getSession();
+    const token = session?.data?.session?.access_token;
+    const res = await fetch(SUPABASE_URL + '/functions/v1/admin-manage-users', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer ' + token,
+        'apikey': SUPABASE_ANON_KEY,
+      },
+      body: JSON.stringify({ action: 'list-users' }),
+    });
+    const result = await res.json();
+    if (!res.ok) throw new Error(result.error || 'Failed to load users');
+
+    const users = result.users || [];
+    if (users.length === 0) {
+      container.innerHTML = '<div style="text-align:center;padding:20px;color:#9ca3af;">No users found.</div>';
+      return;
+    }
+
+    const roleOptions = (current) => ['admin', 'member', 'viewer'].map(r =>
+      `<option value="${r}" ${r === current ? 'selected' : ''}>${r.charAt(0).toUpperCase() + r.slice(1)}</option>`
+    ).join('');
+
+    container.innerHTML = `
+      <table class="admin-users-table">
+        <thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Last Login</th></tr></thead>
+        <tbody>
+          ${users.map(u => `
+            <tr>
+              <td style="font-weight:600;">${escapeHtml(u.display_name || u.full_name || u.email.split('@')[0])}</td>
+              <td>${escapeHtml(u.email)}</td>
+              <td>
+                <select class="role-select-inline" onchange="updateUserRole('${u.id}', this.value, this)" ${u.id === currentUser.id ? 'disabled title="Cannot change own role"' : ''}>
+                  ${roleOptions(u.role)}
+                </select>
+              </td>
+              <td style="color:#9ca3af;font-size:0.82rem;">${u.last_sign_in_at ? new Date(u.last_sign_in_at).toLocaleDateString() : 'Never'}</td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+    `;
+  } catch (err) {
+    console.error('Failed to load users:', err);
+    container.innerHTML = `<div style="text-align:center;padding:20px;color:var(--accent-red);">${escapeHtml(err.message)}</div>`;
+  }
+}
+
+async function updateUserRole(userId, newRole, selectEl) {
+  try {
+    const session = await sb.auth.getSession();
+    const token = session?.data?.session?.access_token;
+    const res = await fetch(SUPABASE_URL + '/functions/v1/admin-manage-users', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer ' + token,
+        'apikey': SUPABASE_ANON_KEY,
+      },
+      body: JSON.stringify({ action: 'update-role', user_id: userId, role: newRole }),
+    });
+    const result = await res.json();
+    if (!res.ok) throw new Error(result.error || 'Failed to update role');
+    showDDToast('Role updated to ' + newRole);
+  } catch (err) {
+    console.error('Failed to update role:', err);
+    alert('Failed to update role: ' + err.message);
+    // Reload to reset dropdown
+    loadAdminUsersList();
+  }
+}
+window.updateUserRole = updateUserRole;
+
+// --- Profiles Tab ---
+
+async function loadProfilesTab() {
   const { data, error } = await sb.from('scoring_profiles').select('*').order('display_name');
   if (error) {
     console.error('Failed to load profiles:', error);
-    alert('Failed to load profiles');
     return;
   }
   allProfiles = data || [];
 
-  // Build user dropdown from profiles
   const select = $('profileUserSelect');
   select.innerHTML = '';
   if (allProfiles.length === 0) {
-    select.innerHTML = '<option value="">No profiles yet — save to create one</option>';
+    select.innerHTML = '<option value="">No profiles yet</option>';
     profileEditingUserId = currentUser.id;
     profileEditingId = null;
     populateProfileForm(null);
   } else {
     for (const p of allProfiles) {
-      const label = p.display_name || p.name || p.user_id;
+      const label = (p.display_name || p.name || p.user_id) + (p.role ? ` (${p.role})` : '');
       const opt = document.createElement('option');
       opt.value = p.user_id;
       opt.textContent = label;
       opt.dataset.profileId = p.id;
       select.appendChild(opt);
     }
-    // Default to current user if they have a profile, else first
     const myProfile = allProfiles.find(p => p.user_id === currentUser.id);
-    if (myProfile) {
-      select.value = myProfile.user_id;
-    }
+    if (myProfile) select.value = myProfile.user_id;
     onProfileUserChange();
   }
-
   $('profileStatus').textContent = '';
-  modal.style.display = 'flex';
 }
-window.openProfileSettings = openProfileSettings;
 
 function onProfileUserChange() {
   const select = $('profileUserSelect');
@@ -1132,12 +1231,6 @@ function populateProfileForm(profile) {
   }
 }
 
-function closeProfileSettings() {
-  const modal = $('profileModalOverlay');
-  if (modal) modal.style.display = 'none';
-}
-window.closeProfileSettings = closeProfileSettings;
-
 async function saveProfileSettings() {
   const companyProfile = $('profileCompanyDesc').value.trim();
   const positiveKw = $('profilePositiveKw').value.split(',').map(s => s.trim()).filter(Boolean);
@@ -1161,12 +1254,10 @@ async function saveProfileSettings() {
 
   let error;
   if (profileEditingId) {
-    // Update existing profile
     ({ error } = await sb.from('scoring_profiles')
       .update(profileData)
       .eq('id', profileEditingId));
   } else {
-    // Insert new profile — also set display_name from dropdown text
     const select = $('profileUserSelect');
     const selectedOpt = select.options[select.selectedIndex];
     profileData.display_name = selectedOpt ? selectedOpt.textContent : targetUserId;
@@ -1180,18 +1271,70 @@ async function saveProfileSettings() {
     return;
   }
 
-  // If we edited current user's profile, reload it for scoring
   if (targetUserId === currentUser.id) {
     await loadScoringProfile();
     if (scannerInitialized) await loadFilteredOpportunities(0);
   }
 
   showDDToast('Profile saved for ' + ($('profileUserSelect').options[$('profileUserSelect').selectedIndex]?.textContent || 'user'));
-
-  // Refresh the modal data
-  await openProfileSettings();
+  await loadProfilesTab();
 }
 window.saveProfileSettings = saveProfileSettings;
+
+// --- Create User Tab ---
+
+async function createNewUser() {
+  const name = $('newUserName').value.trim();
+  const email = $('newUserEmail').value.trim();
+  const password = $('newUserPassword').value;
+  const role = $('newUserRole').value;
+  const statusEl = $('createUserStatus');
+
+  if (!email || !password) {
+    statusEl.innerHTML = '<span style="color:var(--accent-red);">Email and password are required.</span>';
+    return;
+  }
+  if (password.length < 6) {
+    statusEl.innerHTML = '<span style="color:var(--accent-red);">Password must be at least 6 characters.</span>';
+    return;
+  }
+
+  statusEl.innerHTML = '<span style="color:#9ca3af;">Creating user...</span>';
+
+  try {
+    const session = await sb.auth.getSession();
+    const token = session?.data?.session?.access_token;
+    const res = await fetch(SUPABASE_URL + '/functions/v1/admin-manage-users', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer ' + token,
+        'apikey': SUPABASE_ANON_KEY,
+      },
+      body: JSON.stringify({
+        action: 'create-user',
+        email,
+        password,
+        full_name: name || email.split('@')[0],
+        role,
+      }),
+    });
+    const result = await res.json();
+    if (!res.ok) throw new Error(result.error || 'Failed to create user');
+
+    statusEl.innerHTML = `<span style="color:#047857;">User <strong>${escapeHtml(result.user.display_name)}</strong> created as <strong>${result.user.role}</strong>.</span>`;
+    $('newUserName').value = '';
+    $('newUserEmail').value = '';
+    $('newUserPassword').value = '';
+    $('newUserRole').value = 'member';
+
+    showDDToast('User created: ' + result.user.email);
+  } catch (err) {
+    console.error('Failed to create user:', err);
+    statusEl.innerHTML = `<span style="color:var(--accent-red);">${escapeHtml(err.message)}</span>`;
+  }
+}
+window.createNewUser = createNewUser;
 
 // --- Client-side scoring ---
 
@@ -2419,10 +2562,14 @@ const views = {
   analyze: { el: () => $('viewAnalyze'), init: initAnalyzeView, adminOnly: true },
 };
 
+// Admin check — uses role from scoring_profiles (loaded on login), falls back to email list for bootstrap
 const ADMIN_EMAILS = ['csardine@provisionsunlimited.net', 'csardine32@gmail.com'];
 
 function isAdmin() {
   if (!currentUser) return false;
+  // DB role takes priority (set after loadScoringProfile)
+  if (scoringProfile?.role === 'admin') return true;
+  // Fallback for bootstrap (before profile is loaded)
   return ADMIN_EMAILS.includes((currentUser.email || '').toLowerCase());
 }
 

@@ -14,7 +14,7 @@
       rel="stylesheet"
     />
     <link rel="stylesheet" href="style.css" />
-    <link rel="stylesheet" href="dashboard.css?v=22" />
+    <link rel="stylesheet" href="dashboard.css?v=23" />
   </head>
   <body>
     <!-- ============ Login Overlay ============ -->
@@ -103,7 +103,7 @@
           <div class="sidebar-divider"></div>
           <div class="sidebar-section admin-only">
             <a class="sidebar-link" onclick="openProfileSettings()" style="cursor:pointer;">
-              <i class="fas fa-cog"></i><span>Profile</span>
+              <i class="fas fa-shield-alt"></i><span>Admin</span>
             </a>
           </div>
         </nav>
@@ -369,55 +369,98 @@
       <div class="deep-dive-actions" id="deepDiveActions"></div>
     </div>
 
-    <!-- Profile Settings Modal -->
+    <!-- Admin Panel Modal -->
     <div class="modal-overlay" id="profileModalOverlay" style="display:none;">
-      <div class="modal" style="max-width: 680px;">
+      <div class="modal" style="max-width: 740px;">
         <div class="modal-header">
-          <h2><i class="fas fa-users-cog" style="margin-right:8px;"></i>Scoring Profiles</h2>
+          <h2><i class="fas fa-users-cog" style="margin-right:8px;"></i>Admin Panel</h2>
           <button class="modal-close" onclick="closeProfileSettings()">&times;</button>
         </div>
-        <div class="modal-body" style="padding:20px;">
-          <!-- User selector (admin sees all users) -->
-          <div class="form-group" style="margin-bottom:18px;">
-            <label style="font-weight:600;">User</label>
-            <select id="profileUserSelect" onchange="onProfileUserChange()" style="width:100%;padding:10px;border:1px solid #e5e7eb;border-radius:6px;font-size:0.9rem;background:#fff;">
-              <option value="">Loading...</option>
-            </select>
+        <div class="modal-body" style="padding:0;">
+          <!-- Tabs -->
+          <div class="admin-tabs">
+            <button class="admin-tab active" data-tab="users" onclick="switchAdminTab('users')"><i class="fas fa-users"></i> Team</button>
+            <button class="admin-tab" data-tab="profiles" onclick="switchAdminTab('profiles')"><i class="fas fa-sliders-h"></i> Scoring Profiles</button>
+            <button class="admin-tab" data-tab="create" onclick="switchAdminTab('create')"><i class="fas fa-user-plus"></i> Create User</button>
           </div>
-          <div id="profileFormFields">
+
+          <!-- Tab: Team / Users List -->
+          <div class="admin-tab-content active" id="adminTabUsers" style="padding:20px;">
+            <div id="adminUsersList" style="font-size:0.88rem;">Loading team...</div>
+          </div>
+
+          <!-- Tab: Scoring Profiles -->
+          <div class="admin-tab-content" id="adminTabProfiles" style="padding:20px;">
+            <div class="form-group" style="margin-bottom:18px;">
+              <label style="font-weight:600;">User</label>
+              <select id="profileUserSelect" onchange="onProfileUserChange()" style="width:100%;padding:10px;border:1px solid #e5e7eb;border-radius:6px;font-size:0.9rem;background:#fff;">
+                <option value="">Loading...</option>
+              </select>
+            </div>
+            <div id="profileFormFields">
+              <div class="form-group">
+                <label>Company Profile</label>
+                <textarea id="profileCompanyDesc" rows="4" placeholder="Describe your company, capabilities, certifications, past performance areas..." style="width:100%;font-size:0.85rem;padding:10px;border:1px solid #e5e7eb;border-radius:6px;resize:vertical;font-family:inherit;"></textarea>
+                <small style="color:#9ca3af;">This shapes how the AI evaluates opportunities for your company.</small>
+              </div>
+              <div class="form-group" style="margin-top:16px;">
+                <label>Positive Keywords <small style="color:#9ca3af;">(+score per match)</small></label>
+                <textarea id="profilePositiveKw" rows="3" placeholder="cybersecurity, cloud migration, SDVOSB, healthcare IT..." style="width:100%;font-size:0.85rem;padding:10px;border:1px solid #e5e7eb;border-radius:6px;resize:vertical;font-family:inherit;"></textarea>
+                <small style="color:#9ca3af;">Comma-separated. Opportunities matching these score higher.</small>
+              </div>
+              <div class="form-group" style="margin-top:16px;">
+                <label>Negative Keywords <small style="color:#9ca3af;">(-score per match)</small></label>
+                <textarea id="profileNegativeKw" rows="3" placeholder="construction only, manual labor, food service..." style="width:100%;font-size:0.85rem;padding:10px;border:1px solid #e5e7eb;border-radius:6px;resize:vertical;font-family:inherit;"></textarea>
+                <small style="color:#9ca3af;">Comma-separated. Opportunities matching these score lower.</small>
+              </div>
+              <div style="display:flex;gap:8px;margin-top:12px;">
+                <div class="form-group" style="flex:1;">
+                  <label>Base Score</label>
+                  <input type="number" id="profileBaseScore" value="50" min="0" max="100" style="width:100%;padding:8px;border:1px solid #e5e7eb;border-radius:6px;" />
+                </div>
+                <div class="form-group" style="flex:1;">
+                  <label>Positive Bonus</label>
+                  <input type="number" id="profilePosBonus" value="5" min="0" max="25" style="width:100%;padding:8px;border:1px solid #e5e7eb;border-radius:6px;" />
+                </div>
+                <div class="form-group" style="flex:1;">
+                  <label>Negative Penalty</label>
+                  <input type="number" id="profileNegPenalty" value="15" min="0" max="30" style="width:100%;padding:8px;border:1px solid #e5e7eb;border-radius:6px;" />
+                </div>
+              </div>
+              <div id="profileStatus" style="margin-top:10px;font-size:0.82rem;color:#9ca3af;"></div>
+              <div style="margin-top:20px;display:flex;gap:10px;">
+                <button class="login-btn" onclick="saveProfileSettings()" style="flex:1;"><i class="fas fa-save" style="margin-right:6px;"></i>Save Profile</button>
+                <button class="login-btn" onclick="closeProfileSettings()" style="flex:1;background:#6b7280;">Cancel</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Tab: Create User -->
+          <div class="admin-tab-content" id="adminTabCreate" style="padding:20px;">
             <div class="form-group">
-              <label>Company Profile</label>
-              <textarea id="profileCompanyDesc" rows="5" placeholder="Describe your company, capabilities, certifications, past performance areas..." style="width:100%;font-size:0.85rem;padding:10px;border:1px solid #e5e7eb;border-radius:6px;resize:vertical;font-family:inherit;"></textarea>
-              <small style="color:#9ca3af;">This shapes how the AI evaluates opportunities for your company.</small>
+              <label>Full Name</label>
+              <input type="text" id="newUserName" placeholder="John Smith" style="width:100%;padding:10px;border:1px solid #e5e7eb;border-radius:6px;font-size:0.9rem;" />
             </div>
-            <div class="form-group" style="margin-top:16px;">
-              <label>Positive Keywords <small style="color:#9ca3af;">(+score per match)</small></label>
-              <textarea id="profilePositiveKw" rows="3" placeholder="cybersecurity, cloud migration, SDVOSB, healthcare IT..." style="width:100%;font-size:0.85rem;padding:10px;border:1px solid #e5e7eb;border-radius:6px;resize:vertical;font-family:inherit;"></textarea>
-              <small style="color:#9ca3af;">Comma-separated. Opportunities matching these score higher.</small>
+            <div class="form-group" style="margin-top:14px;">
+              <label>Email</label>
+              <input type="email" id="newUserEmail" placeholder="john@company.com" style="width:100%;padding:10px;border:1px solid #e5e7eb;border-radius:6px;font-size:0.9rem;" />
             </div>
-            <div class="form-group" style="margin-top:16px;">
-              <label>Negative Keywords <small style="color:#9ca3af;">(-score per match)</small></label>
-              <textarea id="profileNegativeKw" rows="3" placeholder="construction only, manual labor, food service..." style="width:100%;font-size:0.85rem;padding:10px;border:1px solid #e5e7eb;border-radius:6px;resize:vertical;font-family:inherit;"></textarea>
-              <small style="color:#9ca3af;">Comma-separated. Opportunities matching these score lower.</small>
+            <div class="form-group" style="margin-top:14px;">
+              <label>Temporary Password</label>
+              <input type="text" id="newUserPassword" placeholder="Min 6 characters" style="width:100%;padding:10px;border:1px solid #e5e7eb;border-radius:6px;font-size:0.9rem;" />
+              <small style="color:#9ca3af;">User should change this on first login.</small>
             </div>
-            <div style="display:flex;gap:8px;margin-top:12px;">
-              <div class="form-group" style="flex:1;">
-                <label>Base Score</label>
-                <input type="number" id="profileBaseScore" value="50" min="0" max="100" style="width:100%;padding:8px;border:1px solid #e5e7eb;border-radius:6px;" />
-              </div>
-              <div class="form-group" style="flex:1;">
-                <label>Positive Bonus</label>
-                <input type="number" id="profilePosBonus" value="5" min="0" max="25" style="width:100%;padding:8px;border:1px solid #e5e7eb;border-radius:6px;" />
-              </div>
-              <div class="form-group" style="flex:1;">
-                <label>Negative Penalty</label>
-                <input type="number" id="profileNegPenalty" value="15" min="0" max="30" style="width:100%;padding:8px;border:1px solid #e5e7eb;border-radius:6px;" />
-              </div>
+            <div class="form-group" style="margin-top:14px;">
+              <label>Role</label>
+              <select id="newUserRole" style="width:100%;padding:10px;border:1px solid #e5e7eb;border-radius:6px;font-size:0.9rem;background:#fff;">
+                <option value="member">Member — Scanner, pipeline, own profile</option>
+                <option value="viewer">Viewer — Read-only scanner access</option>
+                <option value="admin">Admin — Full access, manage users</option>
+              </select>
             </div>
-            <div id="profileStatus" style="margin-top:10px;font-size:0.82rem;color:#9ca3af;"></div>
-            <div style="margin-top:20px;display:flex;gap:10px;">
-              <button class="login-btn" onclick="saveProfileSettings()" style="flex:1;"><i class="fas fa-save" style="margin-right:6px;"></i>Save Profile</button>
-              <button class="login-btn" onclick="closeProfileSettings()" style="flex:1;background:#6b7280;">Cancel</button>
+            <div id="createUserStatus" style="margin-top:12px;font-size:0.85rem;"></div>
+            <div style="margin-top:20px;">
+              <button class="login-btn" onclick="createNewUser()" style="width:100%;"><i class="fas fa-user-plus" style="margin-right:6px;"></i>Create User</button>
             </div>
           </div>
         </div>
@@ -428,7 +471,7 @@
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/mammoth@1.8.0/mammoth.browser.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
-    <script src="naics-categories.js?v=22"></script>
-    <script src="dashboard.js?v=22"></script>
+    <script src="naics-categories.js?v=23"></script>
+    <script src="dashboard.js?v=23"></script>
   </body>
 </html>

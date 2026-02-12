@@ -158,6 +158,80 @@
 .admin-only { display: none; }
 body.is-admin .admin-only { display: block; }
 
+/* Admin panel tabs */
+.admin-tabs {
+  display: flex;
+  border-bottom: 2px solid #e5e7eb;
+  background: #f9fafb;
+}
+.admin-tab {
+  flex: 1;
+  padding: 12px 8px;
+  border: none;
+  background: transparent;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #6b7280;
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -2px;
+  transition: all 0.15s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+.admin-tab:hover { color: var(--accent-blue, #3b82f6); background: #f0f4ff; }
+.admin-tab.active {
+  color: var(--accent-blue, #3b82f6);
+  border-bottom-color: var(--accent-blue, #3b82f6);
+  background: #fff;
+}
+.admin-tab-content { display: none; }
+.admin-tab-content.active { display: block; }
+
+/* Admin users table */
+.admin-users-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+.admin-users-table th {
+  text-align: left;
+  padding: 8px 10px;
+  color: #6b7280;
+  font-weight: 600;
+  border-bottom: 1px solid #e5e7eb;
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+.admin-users-table td {
+  padding: 10px;
+  border-bottom: 1px solid #f3f4f6;
+  vertical-align: middle;
+}
+.admin-users-table tr:hover td { background: #f9fafb; }
+.role-badge {
+  display: inline-block;
+  padding: 2px 10px;
+  border-radius: 10px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+.role-badge.admin { background: #dbeafe; color: #1d4ed8; }
+.role-badge.member { background: #d1fae5; color: #047857; }
+.role-badge.viewer { background: #f3f4f6; color: #6b7280; }
+.role-select-inline {
+  padding: 4px 8px;
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  font-size: 0.82rem;
+  background: #fff;
+}
+
 /* Top bar */
 .dash-topbar {
   position: fixed;
