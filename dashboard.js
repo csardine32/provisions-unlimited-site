@@ -1051,26 +1051,23 @@ function populateFilterDropdowns() {
     }
   }
 
-  // Set-aside dropdown
+  // Set-aside dropdown — values match SAM.gov full strings stored in Supabase
   const setAsideSelect = $('filterSetAside');
   if (setAsideSelect) {
     const setAsides = [
-      { code: 'SBA', label: 'Small Business (SBA)' },
-      { code: 'SBP', label: 'Small Business Set-Aside' },
-      { code: 'SDVOSBC', label: 'SDVOSB Competitive' },
-      { code: 'SDVOSBS', label: 'SDVOSB Sole Source' },
-      { code: '8A', label: '8(a) Competitive' },
-      { code: '8AN', label: '8(a) Sole Source' },
-      { code: 'HZC', label: 'HUBZone Competitive' },
-      { code: 'HZS', label: 'HUBZone Sole Source' },
-      { code: 'WOSB', label: 'WOSB' },
-      { code: 'EDWOSB', label: 'EDWOSB' },
-      { code: 'VSA', label: 'VOSB Set-Aside' },
-      { code: 'VSB', label: 'VOSB Sole Source' },
+      { value: 'Service-Disabled Veteran-Owned Small Business Set Aside', label: 'SDVOSB Competitive' },
+      { value: 'SDVOSB Sole Source', label: 'SDVOSB Sole Source' },
+      { value: 'Total Small Business Set-Aside (FAR 19.5)', label: 'Small Business (Total)' },
+      { value: 'Partial Small Business Set-Aside (FAR 19.5)', label: 'Small Business (Partial)' },
+      { value: '8a Competed', label: '8(a) Competitive' },
+      { value: '8(a) Sole Source', label: '8(a) Sole Source' },
+      { value: 'HUBZone Set Aside', label: 'HUBZone' },
+      { value: 'Women-Owned Small Business', label: 'WOSB' },
+      { value: 'Veteran Set Aside', label: 'Veteran Set-Aside' },
     ];
     setAsideSelect.innerHTML = '<option value="">All Set-Asides</option>';
     for (const sa of setAsides) {
-      setAsideSelect.innerHTML += `<option value="${escapeHtml(sa.code)}">${escapeHtml(sa.label)}</option>`;
+      setAsideSelect.innerHTML += `<option value="${escapeHtml(sa.value)}">${escapeHtml(sa.label)}</option>`;
     }
   }
 }
@@ -1150,7 +1147,7 @@ async function loadFilteredOpportunities(page) {
   if (agency) query = query.ilike('agency', `%${agency}%`);
 
   const setAside = $('filterSetAside')?.value;
-  if (setAside) query = query.ilike('set_aside', `%${setAside}%`);
+  if (setAside) query = query.eq('set_aside', setAside);
 
   const state = $('filterState')?.value;
   if (state) query = query.eq('state', state);
