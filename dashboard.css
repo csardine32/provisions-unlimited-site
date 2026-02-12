@@ -1950,3 +1950,201 @@ body.is-admin .admin-only { display: block; }
     width: 100%;
   }
 }
+
+/* --- Scanner Filters --- */
+.scanner-filters {
+  background: var(--white);
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  padding: 16px 20px;
+  margin-bottom: 12px;
+}
+.filter-row {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 10px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+.filter-row:last-of-type { margin-bottom: 0; }
+.filter-select {
+  padding: 8px 12px;
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  font-size: 0.82rem;
+  font-family: 'Inter', sans-serif;
+  font-weight: 600;
+  color: var(--text-dark);
+  background: #f9fafb;
+  min-width: 140px;
+  cursor: pointer;
+  transition: border-color 0.15s;
+}
+.filter-select:focus {
+  outline: none;
+  border-color: var(--primary-navy);
+  background: var(--white);
+}
+.filter-input-sm {
+  padding: 8px 12px;
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  font-size: 0.82rem;
+  font-family: 'Inter', sans-serif;
+  font-weight: 600;
+  color: var(--text-dark);
+  background: #f9fafb;
+  width: 120px;
+  transition: border-color 0.15s;
+}
+.filter-input-sm:focus {
+  outline: none;
+  border-color: var(--primary-navy);
+  background: var(--white);
+}
+.filter-input {
+  padding: 8px 12px;
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  font-size: 0.82rem;
+  font-family: 'Inter', sans-serif;
+  font-weight: 600;
+  color: var(--text-dark);
+  background: #f9fafb;
+  flex: 1;
+  min-width: 180px;
+  transition: border-color 0.15s;
+}
+.filter-input:focus {
+  outline: none;
+  border-color: var(--primary-navy);
+  background: var(--white);
+}
+.filter-apply-btn {
+  padding: 8px 18px;
+  background: var(--primary-navy);
+  color: var(--white);
+  border: none;
+  border-radius: 6px;
+  font-weight: 700;
+  font-size: 0.82rem;
+  cursor: pointer;
+  font-family: 'Inter', sans-serif;
+  transition: all 0.15s;
+  white-space: nowrap;
+}
+.filter-apply-btn:hover {
+  background: #162a47;
+  transform: translateY(-1px);
+}
+.filter-reset-btn {
+  padding: 8px 14px;
+  background: transparent;
+  color: #6b7280;
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  font-weight: 600;
+  font-size: 0.82rem;
+  cursor: pointer;
+  font-family: 'Inter', sans-serif;
+  transition: all 0.15s;
+  white-space: nowrap;
+}
+.filter-reset-btn:hover {
+  border-color: var(--accent-red);
+  color: var(--accent-red);
+}
+.filter-meta {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-top: 8px;
+  font-size: 0.78rem;
+  color: #6b7280;
+  font-weight: 600;
+}
+.filter-meta label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+}
+.filter-meta input[type="checkbox"] {
+  accent-color: var(--primary-navy);
+}
+.filter-result-count {
+  font-weight: 700;
+  color: var(--primary-navy);
+}
+
+/* Score badge with keyword match tooltip */
+.opp-score-badge.user-scored {
+  position: relative;
+}
+.opp-score-keywords {
+  display: none;
+  position: absolute;
+  top: 100%;
+  left: 0;
+  z-index: 10;
+  background: var(--white);
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  padding: 8px 12px;
+  font-size: 0.72rem;
+  font-weight: 500;
+  color: var(--text-dark);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+  min-width: 200px;
+  max-width: 300px;
+  white-space: normal;
+  line-height: 1.4;
+}
+.opp-score-badge.user-scored:hover .opp-score-keywords {
+  display: block;
+}
+.kw-match { color: #10b981; }
+.kw-mismatch { color: var(--accent-red); }
+
+/* Pagination */
+.scanner-pagination {
+  text-align: center;
+  padding: 16px 0;
+}
+.scanner-show-more {
+  padding: 10px 28px;
+  background: var(--white);
+  color: var(--primary-navy);
+  border: 2px solid var(--primary-navy);
+  border-radius: 6px;
+  font-weight: 700;
+  font-size: 0.85rem;
+  cursor: pointer;
+  font-family: 'Inter', sans-serif;
+  transition: all 0.15s;
+}
+.scanner-show-more:hover {
+  background: var(--primary-navy);
+  color: var(--white);
+}
+.scanner-show-more:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Mobile responsive filters */
+@media (max-width: 768px) {
+  .filter-row {
+    flex-direction: column;
+  }
+  .filter-select,
+  .filter-input-sm,
+  .filter-input {
+    width: 100%;
+    min-width: unset;
+  }
+  .filter-apply-btn,
+  .filter-reset-btn {
+    width: 100%;
+  }
+}

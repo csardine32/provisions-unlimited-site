@@ -14,7 +14,7 @@
       rel="stylesheet"
     />
     <link rel="stylesheet" href="style.css" />
-    <link rel="stylesheet" href="dashboard.css?v=14" />
+    <link rel="stylesheet" href="dashboard.css?v=15" />
   </head>
   <body>
     <!-- ============ Login Overlay ============ -->
@@ -106,6 +106,30 @@
         <main class="main-content" id="mainContent">
           <!-- Scanner View -->
           <div class="view active" id="viewScanner">
+            <div class="scanner-filters" id="scannerFilters">
+              <div class="filter-row">
+                <select id="filterNaicsCategory" class="filter-select">
+                  <option value="">All Categories</option>
+                </select>
+                <input type="text" id="filterAgency" placeholder="Agency..." class="filter-input-sm" />
+                <select id="filterSetAside" class="filter-select">
+                  <option value="">All Set-Asides</option>
+                </select>
+                <select id="filterState" class="filter-select">
+                  <option value="">All States</option>
+                </select>
+                <input type="text" id="filterCity" placeholder="City..." class="filter-input-sm" />
+              </div>
+              <div class="filter-row">
+                <input type="text" id="filterKeyword" placeholder="Search title, description..." class="filter-input" />
+                <button id="filterApply" class="filter-apply-btn"><i class="fas fa-search"></i> Search</button>
+                <button id="filterReset" class="filter-reset-btn">Reset</button>
+              </div>
+              <div class="filter-meta">
+                <label><input type="checkbox" id="filterFutureOnly" checked /> Active deadlines only</label>
+                <span id="filterResultCount" class="filter-result-count"></span>
+              </div>
+            </div>
             <div class="top-opps-section" id="topOppsSection" style="display: none;">
               <div class="top-opps-header" id="topOppsToggle">
                 <h2><i class="fas fa-radar" style="margin-right: 8px; font-size: 1rem;"></i>Top Opportunities <span class="top-opps-count" id="topOppsCount"></span></h2>
@@ -342,6 +366,7 @@
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/mammoth@1.8.0/mammoth.browser.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
-    <script src="dashboard.js?v=14"></script>
+    <script src="naics-categories.js?v=15"></script>
+    <script src="dashboard.js?v=15"></script>
   </body>
 </html>

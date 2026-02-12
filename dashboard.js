@@ -35,6 +35,9 @@ let pendingAdhocNoticeId = null;
 let intelPendingFiles = {};  // per-project file data keyed by project ID
 let expandedIntel = {};       // track which project intel sections are open
 let expandedActivity = {};    // track which project activity sections are open
+let scoringProfile = null;    // per-user scoring profile from Supabase
+let scannerPage = 0;          // current pagination page for scanner
+let scannerTotalCount = 0;    // total matching results from server
 
 // --- Standard milestone template (days before deadline) ---
 const MILESTONE_TEMPLATE = [
@@ -123,6 +126,9 @@ function showLogin() {
   intelPendingFiles = {};
   expandedIntel = {};
   expandedActivity = {};
+  scoringProfile = null;
+  scannerPage = 0;
+  scannerTotalCount = 0;
 }
 
 async function showDashboard() {
@@ -357,12 +363,12 @@ function setupRealtimeSubscriptions() {
     .on('postgres_changes', { event: '*', schema: 'public', table: 'projects' }, () => { loadProjects(); if (activeProjectsInitialized) loadAwardedProjects(); })
     .on('postgres_changes', { event: '*', schema: 'public', table: 'milestones' }, () => { loadProjects(); if (activeProjectsInitialized) loadAwardedProjects(); })
     .on('postgres_changes', { event: '*', schema: 'public', table: 'checklist_items' }, () => { loadProjects(); if (activeProjectsInitialized) loadAwardedProjects(); })
-    .on('postgres_changes', { event: '*', schema: 'public', table: 'scanner_opportunities' }, () => loadTopOpportunities())
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'scanner_opportunities' }, () => loadFilteredOpportunities())
     .on('postgres_changes', { event: '*', schema: 'public', table: 'opportunity_feedback' }, () => {
-      loadUserFeedback().then(() => loadTopOpportunities());
+      loadUserFeedback().then(() => loadFilteredOpportunities());
     })
     .on('postgres_changes', { event: '*', schema: 'public', table: 'opportunity_dismissals' }, () => {
-      loadUserDismissals().then(() => loadTopOpportunities());
+      loadUserDismissals().then(() => loadFilteredOpportunities());
     })
     .on('postgres_changes', { event: '*', schema: 'public', table: 'adhoc_analyses' }, () => {
       if (adhocInitialized) loadAdhocAnalyses();
@@ -980,6 +986,131 @@ function matchesPreferences(opp) {
   );
 }
 
+// --- Load scoring profile ---
+
+async function loadScoringProfile() {
+  const { data, error } = await sb
+    .from('scoring_profiles')
+    .select('*')
+    .eq('user_id', currentUser.id)
+    .eq('is_default', true)
+    .single();
+
+  if (error && error.code !== 'PGRST116') { // PGRST116 = no rows found
+    console.error('Failed to load scoring profile:', error);
+  }
+  scoringProfile = data || null;
+}
+
+// --- Client-side scoring ---
+
+function clientScore(opp, profile) {
+  if (!profile) return { score: null, matched: [], mismatched: [] };
+
+  const haystack = [opp.title, opp.agency, opp.naics_code, opp.set_aside,
+    opp.description_text || '', opp.description_excerpt || '',
+    opp.ai_summary || ''].join(' ').toLowerCase();
+
+  const weights = profile.score_weights || {};
+  let score = weights.base ?? 50;
+  const matched = [], mismatched = [];
+
+  for (const kw of (profile.positive_keywords || [])) {
+    if (haystack.includes(kw.toLowerCase())) { score += (weights.positive_bonus ?? 5); matched.push(kw); }
+  }
+  for (const kw of (profile.negative_keywords || [])) {
+    if (haystack.includes(kw.toLowerCase())) { score -= (weights.negative_penalty ?? 15); mismatched.push(kw); }
+  }
+
+  return { score: Math.max(0, Math.min(100, score)), matched, mismatched };
+}
+
+// --- Populate filter dropdowns ---
+
+function populateFilterDropdowns() {
+  // NAICS categories from naics-categories.js
+  const naicsCatSelect = $('filterNaicsCategory');
+  if (naicsCatSelect && typeof NAICS_CATEGORIES !== 'undefined') {
+    naicsCatSelect.innerHTML = '<option value="">All Categories</option>';
+    for (const cat of Object.keys(NAICS_CATEGORIES)) {
+      naicsCatSelect.innerHTML += `<option value="${escapeHtml(cat)}">${escapeHtml(cat)}</option>`;
+    }
+  }
+
+  // Populate state dropdown with US states + territories
+  const stateSelect = $('filterState');
+  if (stateSelect) {
+    const states = [
+      'AL','AK','AZ','AR','CA','CO','CT','DE','DC','FL','GA','HI','ID','IL','IN','IA','KS','KY',
+      'LA','ME','MD','MA','MI','MN','MS','MO','MT','NE','NV','NH','NJ','NM','NY','NC','ND','OH',
+      'OK','OR','PA','PR','RI','SC','SD','TN','TX','UT','VT','VA','VI','WA','WV','WI','WY'
+    ];
+    stateSelect.innerHTML = '<option value="">All States</option>';
+    for (const st of states) {
+      stateSelect.innerHTML += `<option value="${st}">${st}</option>`;
+    }
+  }
+
+  // Set-aside dropdown
+  const setAsideSelect = $('filterSetAside');
+  if (setAsideSelect) {
+    const setAsides = [
+      { code: 'SBA', label: 'Small Business (SBA)' },
+      { code: 'SBP', label: 'Small Business Set-Aside' },
+      { code: 'SDVOSBC', label: 'SDVOSB Competitive' },
+      { code: 'SDVOSBS', label: 'SDVOSB Sole Source' },
+      { code: '8A', label: '8(a) Competitive' },
+      { code: '8AN', label: '8(a) Sole Source' },
+      { code: 'HZC', label: 'HUBZone Competitive' },
+      { code: 'HZS', label: 'HUBZone Sole Source' },
+      { code: 'WOSB', label: 'WOSB' },
+      { code: 'EDWOSB', label: 'EDWOSB' },
+      { code: 'VSA', label: 'VOSB Set-Aside' },
+      { code: 'VSB', label: 'VOSB Sole Source' },
+    ];
+    setAsideSelect.innerHTML = '<option value="">All Set-Asides</option>';
+    for (const sa of setAsides) {
+      setAsideSelect.innerHTML += `<option value="${escapeHtml(sa.code)}">${escapeHtml(sa.label)}</option>`;
+    }
+  }
+}
+
+// --- Wire filter events ---
+
+function setupFilterEvents() {
+  const applyBtn = $('filterApply');
+  const resetBtn = $('filterReset');
+  const futureOnly = $('filterFutureOnly');
+  const keywordInput = $('filterKeyword');
+
+  if (applyBtn) applyBtn.addEventListener('click', () => { scannerPage = 0; loadFilteredOpportunities(); });
+  if (resetBtn) resetBtn.addEventListener('click', resetFilters);
+  if (futureOnly) futureOnly.addEventListener('change', () => { scannerPage = 0; loadFilteredOpportunities(); });
+
+  // Enter key on keyword input triggers search
+  if (keywordInput) keywordInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { scannerPage = 0; loadFilteredOpportunities(); }
+  });
+
+  // Auto-apply on dropdown changes
+  for (const id of ['filterNaicsCategory', 'filterSetAside', 'filterState']) {
+    const el = $(id);
+    if (el) el.addEventListener('change', () => { scannerPage = 0; loadFilteredOpportunities(); });
+  }
+}
+
+function resetFilters() {
+  $('filterNaicsCategory').value = '';
+  $('filterAgency').value = '';
+  $('filterSetAside').value = '';
+  $('filterState').value = '';
+  $('filterCity').value = '';
+  $('filterKeyword').value = '';
+  $('filterFutureOnly').checked = true;
+  scannerPage = 0;
+  loadFilteredOpportunities();
+}
+
 // --- Score "Why" (click-to-expand inline) ---
 
 function buildReasonsHtml(aiReasonsJson, noticeId) {
@@ -1003,24 +1134,71 @@ window.toggleReasons = toggleReasons;
 
 // --- Main render ---
 
-async function loadTopOpportunities() {
-  const { data, error } = await sb
-    .from('scanner_opportunities')
-    .select('*')
-    .order('last_score', { ascending: false });
+async function loadFilteredOpportunities(page) {
+  if (page !== undefined) scannerPage = page;
+  const pageSize = 100;
+
+  let query = sb.from('scanner_opportunities').select('*', { count: 'exact' });
+
+  // Apply server-side filters
+  const naicsCat = $('filterNaicsCategory')?.value;
+  if (naicsCat && typeof NAICS_CATEGORIES !== 'undefined' && NAICS_CATEGORIES[naicsCat]) {
+    query = query.in('naics_code', NAICS_CATEGORIES[naicsCat].codes);
+  }
+
+  const agency = $('filterAgency')?.value;
+  if (agency) query = query.ilike('agency', `%${agency}%`);
+
+  const setAside = $('filterSetAside')?.value;
+  if (setAside) query = query.ilike('set_aside', `%${setAside}%`);
+
+  const state = $('filterState')?.value;
+  if (state) query = query.eq('state', state);
+
+  const city = $('filterCity')?.value.trim();
+  if (city) query = query.ilike('city', `%${city}%`);
+
+  const keyword = $('filterKeyword')?.value.trim();
+  if (keyword) query = query.or(`title.ilike.%${keyword}%,ai_summary.ilike.%${keyword}%,description_text.ilike.%${keyword}%`);
+
+  if ($('filterFutureOnly')?.checked) {
+    query = query.gte('response_deadline', new Date().toISOString().slice(0, 10));
+  }
+
+  query = query
+    .range(scannerPage * pageSize, (scannerPage + 1) * pageSize - 1)
+    .order('response_deadline', { ascending: true, nullsFirst: false });
+
+  const { data, count, error } = await query;
 
   if (error) {
-    console.error('Failed to load top opportunities:', error);
+    console.error('Failed to load opportunities:', error);
     topOppsSection.style.display = 'block';
     topOppsTableBody.innerHTML = `<tr><td colspan="8" style="text-align:center;padding:40px;color:var(--accent-red);font-weight:600;">Error loading opportunities: ${escapeHtml(error.message || 'Unknown error')}</td></tr>`;
     return;
   }
 
-  allOpportunities = data || [];
+  scannerTotalCount = count || 0;
+  const pageData = data || [];
+
+  // Merge into allOpportunities (append for pagination)
+  if (scannerPage === 0) {
+    allOpportunities = pageData;
+  } else {
+    // Append new page, dedupe by notice_id
+    const existing = new Set(allOpportunities.map(o => o.notice_id));
+    for (const opp of pageData) {
+      if (!existing.has(opp.notice_id)) allOpportunities.push(opp);
+    }
+  }
 
   if (allOpportunities.length === 0) {
     topOppsSection.style.display = 'block';
-    topOppsTableBody.innerHTML = '<tr><td colspan="8" style="text-align:center;padding:40px;color:#9ca3af;font-weight:600;">No opportunities found</td></tr>';
+    topOppsTableBody.innerHTML = '<tr><td colspan="8" style="text-align:center;padding:40px;color:#9ca3af;font-weight:600;">No opportunities match your filters</td></tr>';
+    $('filterResultCount').textContent = '0 results';
+    // Remove pagination
+    const pag = document.querySelector('.scanner-pagination');
+    if (pag) pag.remove();
     return;
   }
 
@@ -1036,11 +1214,28 @@ async function loadTopOpportunities() {
   const visible = allOpportunities.filter(o => !userDismissals.has(o.notice_id));
   const dismissedCount = allOpportunities.length - visible.length;
 
-  topOppsCount.textContent = visible.length;
+  // Apply client-side scoring and sort
+  const scored = visible.map(opp => {
+    const cs = clientScore(opp, scoringProfile);
+    return { ...opp, _userScore: cs.score, _matched: cs.matched, _mismatched: cs.mismatched };
+  });
+
+  // Sort: user-scored first (by score desc), then by AI score desc
+  scored.sort((a, b) => {
+    if (a._userScore !== null && b._userScore !== null) return b._userScore - a._userScore;
+    if (a._userScore !== null) return -1;
+    if (b._userScore !== null) return 1;
+    return (b.last_score || 0) - (a.last_score || 0);
+  });
+
+  topOppsCount.textContent = scannerTotalCount;
+  $('filterResultCount').textContent = `${scannerTotalCount.toLocaleString()} results`;
   topOppsSection.style.display = 'block';
 
-  topOppsTableBody.innerHTML = visible.map((opp) => {
-    const scoreClass = opp.last_score >= 80 ? 'score-green' : opp.last_score >= 60 ? 'score-yellow' : 'score-red';
+  topOppsTableBody.innerHTML = scored.map((opp) => {
+    // Use user score if available, otherwise AI score
+    const displayScore = opp._userScore !== null ? opp._userScore : Math.round(opp.last_score || 0);
+    const scoreClass = displayScore >= 80 ? 'score-green' : displayScore >= 60 ? 'score-yellow' : 'score-red';
     const deadlineStr = opp.response_deadline ? formatDate(opp.response_deadline) : '';
     const daysLeft = opp.response_deadline ? getDaysUntil(opp.response_deadline) : null;
     const deadlineClass = daysLeft !== null && daysLeft <= 7 ? 'opp-deadline-urgent' : '';
@@ -1052,6 +1247,16 @@ async function loadTopOpportunities() {
       : '';
 
     const reasonsHtml = buildReasonsHtml(opp.ai_reasons_json, opp.notice_id);
+
+    // Score badge with keyword match tooltip
+    let scoreBadgeHtml;
+    if (opp._userScore !== null && (opp._matched.length > 0 || opp._mismatched.length > 0)) {
+      const matchHtml = opp._matched.map(k => `<span class="kw-match">+${escapeHtml(k)}</span>`).join(' ');
+      const mismatchHtml = opp._mismatched.map(k => `<span class="kw-mismatch">-${escapeHtml(k)}</span>`).join(' ');
+      scoreBadgeHtml = `<span class="opp-score-badge ${scoreClass} user-scored">${displayScore}<div class="opp-score-keywords">${matchHtml} ${mismatchHtml}</div></span>`;
+    } else {
+      scoreBadgeHtml = `<span class="opp-score-badge ${scoreClass}${reasonsHtml ? ' has-reasons' : ''}" ${reasonsHtml ? `onclick="toggleReasons('${escapeHtml(opp.notice_id)}')"` : ''}>${displayScore}</span>`;
+    }
 
     const actionHtml = isTracked
       ? `<span class="opp-tracking-badge"><i class="fas fa-check"></i> Tracked</span>`
@@ -1070,11 +1275,13 @@ async function loadTopOpportunities() {
 
     const valueHtml = opp.estimated_value ? escapeHtml(opp.estimated_value) : '';
 
+    // Location display
+    const locationParts = [opp.city, opp.state].filter(Boolean);
+    const locationHtml = locationParts.length > 0 ? `<div class="opp-summary" style="font-size:0.7rem;">${escapeHtml(locationParts.join(', '))}</div>` : '';
+
     return `
       <tr${prefMatch ? ' class="opp-pref-match"' : ''}>
-        <td>
-          <span class="opp-score-badge ${scoreClass}${reasonsHtml ? ' has-reasons' : ''}" ${reasonsHtml ? `onclick="toggleReasons('${escapeHtml(opp.notice_id)}')"` : ''}>${Math.round(opp.last_score)}</span>
-        </td>
+        <td>${scoreBadgeHtml}</td>
         <td class="opp-title-cell">
           ${prefMatch ? '<span class="opp-pref-indicator" title="Matches your preferences"><i class="fas fa-star"></i></span>' : ''}
           ${opp.ui_link
@@ -1082,6 +1289,7 @@ async function loadTopOpportunities() {
             : `<span class="opp-title-link">${escapeHtml(opp.title)}</span>`
           }
           ${summaryHtml}
+          ${locationHtml}
           ${reasonsHtml}
         </td>
         <td>${escapeHtml(opp.agency || '')}</td>
@@ -1102,7 +1310,29 @@ async function loadTopOpportunities() {
     dismissedLink.style.display = 'none';
   }
 
+  // Pagination — Show More button
+  const existingPag = document.querySelector('.scanner-pagination');
+  if (existingPag) existingPag.remove();
+
+  const loadedSoFar = (scannerPage + 1) * pageSize;
+  if (loadedSoFar < scannerTotalCount) {
+    const pagDiv = document.createElement('div');
+    pagDiv.className = 'scanner-pagination';
+    pagDiv.innerHTML = `<button class="scanner-show-more" onclick="loadMoreOpportunities()">Show More (${allOpportunities.length} of ${scannerTotalCount.toLocaleString()})</button>`;
+    topOppsBody.appendChild(pagDiv);
+  }
 }
+
+// Keep loadTopOpportunities as alias for backward compatibility
+async function loadTopOpportunities() {
+  return loadFilteredOpportunities(0);
+}
+
+function loadMoreOpportunities() {
+  scannerPage++;
+  loadFilteredOpportunities();
+}
+window.loadMoreOpportunities = loadMoreOpportunities;
 
 // --- Dismiss ---
 
@@ -1117,7 +1347,7 @@ async function dismissOpportunity(noticeId) {
     return;
   }
   userDismissals.add(noticeId);
-  await loadTopOpportunities();
+  await loadFilteredOpportunities();
 }
 
 async function undismissOpportunity(noticeId) {
@@ -1126,13 +1356,13 @@ async function undismissOpportunity(noticeId) {
     .eq('user_id', currentUser.id)
     .eq('notice_id', noticeId);
   userDismissals.delete(noticeId);
-  await loadTopOpportunities();
+  await loadFilteredOpportunities();
 }
 
 function showDismissed(e) {
   e.preventDefault();
   userDismissals.clear();
-  loadTopOpportunities();
+  loadFilteredOpportunities();
 }
 
 window.dismissOpportunity = dismissOpportunity;
@@ -1166,7 +1396,7 @@ async function toggleFeedback(noticeId, rating) {
   }
 
   buildPreferences();
-  await loadTopOpportunities();
+  await loadFilteredOpportunities();
 }
 
 window.toggleFeedback = toggleFeedback;
@@ -1251,7 +1481,7 @@ async function trackOpportunity(noticeId) {
 
   // Reload both lists
   await loadProjects();
-  await loadTopOpportunities();
+  await loadFilteredOpportunities();
 }
 
 window.trackOpportunity = trackOpportunity;
@@ -1268,6 +1498,7 @@ const deepDiveActions = $('deepDiveActions');
 const deepDiveClose = $('deepDiveClose');
 
 function openDeepDive(noticeId) {
+  if (!isAdmin()) return; // Deep Dive restricted to admin users
   const opp = allOpportunities.find(o => o.notice_id === noticeId);
   if (!opp) return;
 
@@ -1624,12 +1855,13 @@ async function analyzeAttachment(noticeId) {
 window.analyzeAttachment = analyzeAttachment;
 
 function renderDDDescription(opp) {
-  if (!opp.description_excerpt) return '';
-  const truncated = opp.description_excerpt.length >= 1990;
+  const descText = opp.description_text || opp.description_excerpt;
+  if (!descText) return '';
+  const truncated = descText.length >= 1990;
   return `
     <div class="deep-dive-section">
       <h3><i class="fas fa-file-alt"></i> Description</h3>
-      <div class="dd-description" id="ddDescText">${escapeHtml(opp.description_excerpt)}</div>
+      <div class="dd-description" id="ddDescText">${escapeHtml(descText)}</div>
       ${truncated ? '<button class="dd-desc-toggle" onclick="toggleDDDescription()">Show more...</button>' : ''}
     </div>`;
 }
@@ -1658,7 +1890,7 @@ async function ddPursue(noticeId) {
 
   closeDeepDive();
   showDDToast('Marked as Interested');
-  await loadTopOpportunities();
+  await loadFilteredOpportunities();
 }
 
 async function ddPass(noticeId) {
@@ -1764,10 +1996,13 @@ async function initScannerView() {
 
   try {
     if (!scannerInitialized) {
-      await Promise.all([loadUserDismissals(), loadUserFeedback()]);
+      populateFilterDropdowns();
+      setupFilterEvents();
+      await Promise.all([loadUserDismissals(), loadUserFeedback(), loadScoringProfile()]);
       scannerInitialized = true;
     }
-    await loadTopOpportunities();
+    scannerPage = 0;
+    await loadFilteredOpportunities();
   } catch (err) {
     console.error('[Scanner] initScannerView error:', err);
     topOppsTableBody.innerHTML = `<tr><td colspan="8" style="text-align:center;padding:40px;color:var(--accent-red);font-weight:600;">Failed to load opportunities. Check console for details.</td></tr>`;
