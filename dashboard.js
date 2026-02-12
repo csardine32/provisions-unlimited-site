@@ -1023,28 +1023,114 @@ async function loadScoringProfile() {
   if (error && error.code !== 'PGRST116') { // PGRST116 = no rows found
     console.error('Failed to load scoring profile:', error);
   }
-  scoringProfile = data || null;
+
+  if (data) {
+    scoringProfile = data;
+  } else {
+    // Auto-create a default profile so user appears in admin dropdown
+    const displayName = currentUser.user_metadata?.full_name
+      || currentUser.email?.split('@')[0]
+      || currentUser.email;
+    const { data: newProfile, error: insertErr } = await sb
+      .from('scoring_profiles')
+      .insert({
+        user_id: currentUser.id,
+        name: 'default',
+        is_default: true,
+        display_name: displayName,
+        positive_keywords: [],
+        negative_keywords: [],
+        score_weights: { base: 50, positive_bonus: 5, negative_penalty: 15 },
+      })
+      .select()
+      .single();
+
+    if (insertErr) {
+      console.warn('Could not auto-create scoring profile:', insertErr.message);
+      scoringProfile = null;
+    } else {
+      scoringProfile = newProfile;
+    }
+  }
 }
 
-// --- Profile Settings ---
+// --- Profile Settings (Multi-User Admin) ---
 
-function openProfileSettings() {
+let allProfiles = [];          // all scoring profiles (admin sees all, user sees own)
+let profileEditingUserId = null; // which user's profile is being edited
+let profileEditingId = null;     // the profile row ID (null = new)
+
+async function openProfileSettings() {
   if (!isAdmin()) return;
   const modal = $('profileModalOverlay');
   if (!modal) return;
 
-  // Populate fields from current profile
-  const profile = scoringProfile || {};
-  $('profileCompanyDesc').value = profile.company_profile || '';
-  $('profilePositiveKw').value = (profile.positive_keywords || []).join(', ');
-  $('profileNegativeKw').value = (profile.negative_keywords || []).join(', ');
-  $('profileBaseScore').value = profile.score_weights?.base ?? 50;
-  $('profilePosBonus').value = profile.score_weights?.positive_bonus ?? 5;
-  $('profileNegPenalty').value = profile.score_weights?.negative_penalty ?? 15;
+  // Load all profiles (admin RLS returns all users' profiles)
+  const { data, error } = await sb.from('scoring_profiles').select('*').order('display_name');
+  if (error) {
+    console.error('Failed to load profiles:', error);
+    alert('Failed to load profiles');
+    return;
+  }
+  allProfiles = data || [];
 
+  // Build user dropdown from profiles
+  const select = $('profileUserSelect');
+  select.innerHTML = '';
+  if (allProfiles.length === 0) {
+    select.innerHTML = '<option value="">No profiles yet — save to create one</option>';
+    profileEditingUserId = currentUser.id;
+    profileEditingId = null;
+    populateProfileForm(null);
+  } else {
+    for (const p of allProfiles) {
+      const label = p.display_name || p.name || p.user_id;
+      const opt = document.createElement('option');
+      opt.value = p.user_id;
+      opt.textContent = label;
+      opt.dataset.profileId = p.id;
+      select.appendChild(opt);
+    }
+    // Default to current user if they have a profile, else first
+    const myProfile = allProfiles.find(p => p.user_id === currentUser.id);
+    if (myProfile) {
+      select.value = myProfile.user_id;
+    }
+    onProfileUserChange();
+  }
+
+  $('profileStatus').textContent = '';
   modal.style.display = 'flex';
 }
 window.openProfileSettings = openProfileSettings;
+
+function onProfileUserChange() {
+  const select = $('profileUserSelect');
+  const userId = select.value;
+  const profile = allProfiles.find(p => p.user_id === userId);
+  profileEditingUserId = userId;
+  profileEditingId = profile?.id || null;
+  populateProfileForm(profile);
+}
+window.onProfileUserChange = onProfileUserChange;
+
+function populateProfileForm(profile) {
+  const p = profile || {};
+  $('profileCompanyDesc').value = p.company_profile || '';
+  $('profilePositiveKw').value = (p.positive_keywords || []).join(', ');
+  $('profileNegativeKw').value = (p.negative_keywords || []).join(', ');
+  $('profileBaseScore').value = p.score_weights?.base ?? 50;
+  $('profilePosBonus').value = p.score_weights?.positive_bonus ?? 5;
+  $('profileNegPenalty').value = p.score_weights?.negative_penalty ?? 15;
+
+  const status = $('profileStatus');
+  if (profile?.updated_at) {
+    const d = new Date(profile.updated_at);
+    status.textContent = 'Last updated: ' + d.toLocaleDateString() + ' ' + d.toLocaleTimeString();
+  } else {
+    status.textContent = profile ? '' : 'No profile yet — will be created on save.';
+  }
+}
 
 function closeProfileSettings() {
   const modal = $('profileModalOverlay');
@@ -1060,8 +1146,10 @@ async function saveProfileSettings() {
   const posBonus = parseInt($('profilePosBonus').value) || 5;
   const negPenalty = parseInt($('profileNegPenalty').value) || 15;
 
+  const targetUserId = profileEditingUserId || currentUser.id;
+
   const profileData = {
-    user_id: currentUser.id,
+    user_id: targetUserId,
     name: 'default',
     is_default: true,
     company_profile: companyProfile || null,
@@ -1072,13 +1160,16 @@ async function saveProfileSettings() {
   };
 
   let error;
-  if (scoringProfile?.id) {
-    // Update existing
+  if (profileEditingId) {
+    // Update existing profile
     ({ error } = await sb.from('scoring_profiles')
       .update(profileData)
-      .eq('id', scoringProfile.id));
+      .eq('id', profileEditingId));
   } else {
-    // Insert new
+    // Insert new profile — also set display_name from dropdown text
+    const select = $('profileUserSelect');
+    const selectedOpt = select.options[select.selectedIndex];
+    profileData.display_name = selectedOpt ? selectedOpt.textContent : targetUserId;
     ({ error } = await sb.from('scoring_profiles')
       .insert(profileData));
   }
@@ -1089,13 +1180,16 @@ async function saveProfileSettings() {
     return;
   }
 
-  // Reload profile and re-score
-  await loadScoringProfile();
-  closeProfileSettings();
-  showDDToast('Profile saved');
+  // If we edited current user's profile, reload it for scoring
+  if (targetUserId === currentUser.id) {
+    await loadScoringProfile();
+    if (scannerInitialized) await loadFilteredOpportunities(0);
+  }
 
-  // Re-render scanner with new scoring
-  if (scannerInitialized) await loadFilteredOpportunities(0);
+  showDDToast('Profile saved for ' + ($('profileUserSelect').options[$('profileUserSelect').selectedIndex]?.textContent || 'user'));
+
+  // Refresh the modal data
+  await openProfileSettings();
 }
 window.saveProfileSettings = saveProfileSettings;
 
