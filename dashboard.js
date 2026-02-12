@@ -1914,6 +1914,16 @@ function pursueAdhocUnmatched(id) {
   $('formOwner').value = 'Chris';
   $('formPriority').value = 'normal';
 
+  // Pre-fill deadline from extracted response_deadline
+  if (parsed.response_deadline) {
+    const dl = new Date(parsed.response_deadline);
+    if (!isNaN(dl.getTime())) {
+      const offset = dl.getTimezoneOffset();
+      const local = new Date(dl.getTime() - offset * 60000);
+      $('formDeadline').value = local.toISOString().slice(0, 16);
+    }
+  }
+
   // Build notes from analysis summary
   const notesParts = [];
   if (parsed.scope_of_work) notesParts.push('Scope: ' + parsed.scope_of_work);
