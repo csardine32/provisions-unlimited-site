@@ -38,6 +38,7 @@ let expandedActivity = {};    // track which project activity sections are open
 let scoringProfile = null;    // per-user scoring profile from Supabase
 let scannerPage = 0;          // current pagination page for scanner
 let scannerTotalCount = 0;    // total matching results from server
+let expandedWinPlan = {};     // track which project win plan sections are open
 
 // --- Standard milestone template (days before deadline) ---
 const MILESTONE_TEMPLATE = [
@@ -126,6 +127,7 @@ function showLogin() {
   intelPendingFiles = {};
   expandedIntel = {};
   expandedActivity = {};
+  expandedWinPlan = {};
   scoringProfile = null;
   scannerPage = 0;
   scannerTotalCount = 0;
@@ -313,6 +315,17 @@ function renderAwardedProjects() {
             <div class="card-section-title">Documents (${completedChecklist}/${totalChecklist})</div>
             ${checklistHtml}
           </div>
+        ` : ''}
+
+        ${p.win_plan_json ? `
+        <div class="win-plan-toggle ${expandedWinPlan[p.id] ? 'expanded' : ''}" onclick="toggleWinPlan('${p.id}')">
+          <i class="fas fa-chess"></i>
+          <span>Win Strategy</span>
+          <i class="fas fa-chevron-right win-plan-chevron"></i>
+        </div>
+        <div class="win-plan-body ${expandedWinPlan[p.id] ? 'visible' : ''}" id="winPlanBody-${p.id}">
+          ${renderWinPlan(p.win_plan_json)}
+        </div>
         ` : ''}
 
         <div class="intel-toggle ${expandedIntel[p.id] ? 'expanded' : ''}" onclick="toggleIntel('${p.id}')">
@@ -510,6 +523,17 @@ function renderProjects() {
             <div class="card-section-title">Documents (${completedChecklist}/${totalChecklist})</div>
             ${checklistHtml}
           </div>
+        ` : ''}
+
+        ${p.win_plan_json ? `
+        <div class="win-plan-toggle ${expandedWinPlan[p.id] ? 'expanded' : ''}" onclick="toggleWinPlan('${p.id}')">
+          <i class="fas fa-chess"></i>
+          <span>Win Strategy</span>
+          <i class="fas fa-chevron-right win-plan-chevron"></i>
+        </div>
+        <div class="win-plan-body ${expandedWinPlan[p.id] ? 'visible' : ''}" id="winPlanBody-${p.id}">
+          ${renderWinPlan(p.win_plan_json)}
+        </div>
         ` : ''}
 
         <div class="intel-toggle ${expandedIntel[p.id] ? 'expanded' : ''}" onclick="toggleIntel('${p.id}')">
@@ -1452,6 +1476,7 @@ async function trackOpportunity(noticeId) {
     sam_link: opp.ui_link || null,
     notes: notesParts.join('\n') || null,
     created_by: currentUser.id,
+    win_plan_json: (() => { const wp = buildWinPlan(opp); return wp ? JSON.stringify(wp) : null; })(),
   };
 
   const { data: project, error: projectError } = await sb
@@ -1572,6 +1597,146 @@ async function trackOpportunity(noticeId) {
 function safeJsonParse(str) {
   if (!str) return null;
   try { return JSON.parse(str); } catch { return null; }
+}
+
+/**
+ * Build a structured win plan from opportunity analysis data.
+ * Returns a JSON-serializable object stored in projects.win_plan_json.
+ */
+function buildWinPlan(opp) {
+  const attachment = safeJsonParse(opp.attachment_analysis_json);
+  const aiReasons = safeJsonParse(opp.ai_reasons_json) || [];
+  const aiRisks = safeJsonParse(opp.ai_risks_json) || [];
+  const aiSkillsets = safeJsonParse(opp.ai_skillsets_json) || [];
+  const aiMustCheck = safeJsonParse(opp.ai_must_check_json) || [];
+
+  const plan = {};
+
+  // Executive summary
+  if (opp.ai_summary) plan.summary = opp.ai_summary;
+
+  // Why we win — from AI reasons
+  if (aiReasons.length > 0) {
+    plan.win_themes = aiReasons.map(r => typeof r === 'string' ? r : r.reason || JSON.stringify(r));
+  }
+
+  // Scope of work
+  if (attachment?.scope_of_work) plan.scope = attachment.scope_of_work;
+
+  // Evaluation criteria — this is how they'll score us
+  if (attachment?.evaluation_criteria?.length > 0) {
+    plan.evaluation_criteria = attachment.evaluation_criteria;
+  }
+
+  // Key requirements
+  if (attachment?.key_requirements?.length > 0) {
+    plan.key_requirements = attachment.key_requirements;
+  }
+
+  // Team & capabilities needed
+  if (aiSkillsets.length > 0) {
+    plan.required_capabilities = aiSkillsets.map(s => typeof s === 'string' ? s : s.name || JSON.stringify(s));
+  }
+
+  // Risks & mitigations
+  if (aiRisks.length > 0) {
+    plan.risks = aiRisks.map(r => typeof r === 'string' ? r : r.description || JSON.stringify(r));
+  }
+
+  // Red flags from attachment
+  if (attachment?.red_flags?.length > 0) {
+    plan.red_flags = attachment.red_flags;
+  }
+
+  // Period of performance
+  if (attachment?.period_of_performance) plan.period_of_performance = attachment.period_of_performance;
+
+  // Bid readiness assessment
+  if (attachment?.bid_readiness) plan.bid_readiness = attachment.bid_readiness;
+
+  return Object.keys(plan).length > 0 ? plan : null;
+}
+
+/**
+ * Render a win plan JSON object as HTML for the project card.
+ */
+function renderWinPlan(winPlanJson) {
+  const plan = typeof winPlanJson === 'string' ? safeJsonParse(winPlanJson) : winPlanJson;
+  if (!plan) return '<div class="win-plan-empty">No analysis data available. Analyze the solicitation documents to generate a win strategy.</div>';
+
+  const sections = [];
+
+  if (plan.summary) {
+    sections.push(`<div class="win-section">
+      <div class="win-section-title"><i class="fas fa-bullseye"></i> Executive Summary</div>
+      <p>${escapeHtml(plan.summary)}</p>
+    </div>`);
+  }
+
+  if (plan.win_themes?.length) {
+    sections.push(`<div class="win-section">
+      <div class="win-section-title"><i class="fas fa-trophy"></i> Why We Win</div>
+      <ul>${plan.win_themes.map(t => `<li>${escapeHtml(t)}</li>`).join('')}</ul>
+    </div>`);
+  }
+
+  if (plan.scope) {
+    sections.push(`<div class="win-section">
+      <div class="win-section-title"><i class="fas fa-file-alt"></i> Scope of Work</div>
+      <p>${escapeHtml(plan.scope)}</p>
+    </div>`);
+  }
+
+  if (plan.evaluation_criteria?.length) {
+    sections.push(`<div class="win-section">
+      <div class="win-section-title"><i class="fas fa-balance-scale"></i> How They Score Us</div>
+      <ol>${plan.evaluation_criteria.map(c => `<li>${escapeHtml(c)}</li>`).join('')}</ol>
+    </div>`);
+  }
+
+  if (plan.key_requirements?.length) {
+    sections.push(`<div class="win-section">
+      <div class="win-section-title"><i class="fas fa-clipboard-list"></i> Key Requirements</div>
+      <ul>${plan.key_requirements.map(r => `<li>${escapeHtml(r)}</li>`).join('')}</ul>
+    </div>`);
+  }
+
+  if (plan.required_capabilities?.length) {
+    sections.push(`<div class="win-section">
+      <div class="win-section-title"><i class="fas fa-users-cog"></i> Required Capabilities</div>
+      <div class="win-chips">${plan.required_capabilities.map(c => `<span class="win-chip">${escapeHtml(c)}</span>`).join('')}</div>
+    </div>`);
+  }
+
+  if (plan.risks?.length) {
+    sections.push(`<div class="win-section">
+      <div class="win-section-title"><i class="fas fa-exclamation-triangle"></i> Risks</div>
+      <ul class="win-risks">${plan.risks.map(r => `<li>${escapeHtml(r)}</li>`).join('')}</ul>
+    </div>`);
+  }
+
+  if (plan.red_flags?.length) {
+    sections.push(`<div class="win-section">
+      <div class="win-section-title"><i class="fas fa-flag"></i> Red Flags</div>
+      <ul class="win-red-flags">${plan.red_flags.map(r => `<li>${escapeHtml(r)}</li>`).join('')}</ul>
+    </div>`);
+  }
+
+  if (plan.period_of_performance) {
+    sections.push(`<div class="win-section">
+      <div class="win-section-title"><i class="fas fa-calendar-alt"></i> Period of Performance</div>
+      <p>${escapeHtml(plan.period_of_performance)}</p>
+    </div>`);
+  }
+
+  if (plan.bid_readiness) {
+    sections.push(`<div class="win-section">
+      <div class="win-section-title"><i class="fas fa-check-double"></i> Bid Readiness Assessment</div>
+      <p>${escapeHtml(plan.bid_readiness)}</p>
+    </div>`);
+  }
+
+  return sections.join('');
 }
 
 window.trackOpportunity = trackOpportunity;
@@ -2514,6 +2679,15 @@ window.showDismissedAnalyses = showDismissedAnalyses;
 // ============================================================
 // Intel Drop
 // ============================================================
+
+function toggleWinPlan(projectId) {
+  expandedWinPlan[projectId] = !expandedWinPlan[projectId];
+  const toggle = document.querySelector(`[onclick="toggleWinPlan('${projectId}')"]`);
+  const body = document.getElementById('winPlanBody-' + projectId);
+  if (toggle) toggle.classList.toggle('expanded', expandedWinPlan[projectId]);
+  if (body) body.classList.toggle('visible', expandedWinPlan[projectId]);
+}
+window.toggleWinPlan = toggleWinPlan;
 
 function toggleIntel(projectId) {
   expandedIntel[projectId] = !expandedIntel[projectId];

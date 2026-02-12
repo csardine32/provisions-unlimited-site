@@ -1734,6 +1734,102 @@ body.is-admin .admin-only { display: block; }
 }
 
 /* ============================================================
+   Win Strategy Section
+   ============================================================ */
+
+.win-plan-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 20px;
+  cursor: pointer;
+  user-select: none;
+  border-top: 1px solid #f3f4f6;
+  transition: background 0.15s;
+}
+.win-plan-toggle:hover { background: #f9fafb; }
+.win-plan-toggle i.fa-chess { color: #6366f1; font-size: 0.8rem; }
+.win-plan-toggle span {
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: #6366f1;
+}
+.win-plan-toggle .win-plan-chevron {
+  margin-left: auto;
+  font-size: 0.65rem;
+  color: #9ca3af;
+  transition: transform 0.2s;
+}
+.win-plan-toggle.expanded .win-plan-chevron {
+  transform: rotate(90deg);
+}
+.win-plan-body {
+  display: none;
+  padding: 0 20px 16px;
+}
+.win-plan-body.visible { display: block; }
+.win-plan-empty {
+  font-size: 0.8rem;
+  color: #9ca3af;
+  font-style: italic;
+  padding: 12px 0;
+}
+.win-section {
+  margin-bottom: 16px;
+}
+.win-section:last-child { margin-bottom: 0; }
+.win-section-title {
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: #374151;
+  margin-bottom: 6px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.win-section-title i {
+  font-size: 0.7rem;
+  color: #6366f1;
+}
+.win-section-title i.fa-exclamation-triangle { color: #f59e0b; }
+.win-section-title i.fa-flag { color: #ef4444; }
+.win-section-title i.fa-trophy { color: #10b981; }
+.win-section p {
+  font-size: 0.8rem;
+  line-height: 1.5;
+  color: #4b5563;
+  margin: 0;
+}
+.win-section ul, .win-section ol {
+  font-size: 0.8rem;
+  line-height: 1.6;
+  color: #4b5563;
+  margin: 0;
+  padding-left: 18px;
+}
+.win-section li { margin-bottom: 4px; }
+.win-risks li { color: #92400e; }
+.win-red-flags li { color: #991b1b; font-weight: 600; }
+.win-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.win-chip {
+  display: inline-block;
+  padding: 3px 10px;
+  background: #eef2ff;
+  color: #4338ca;
+  border-radius: 12px;
+  font-size: 0.7rem;
+  font-weight: 600;
+}
+
+/* ============================================================
    Intel Drop Section
    ============================================================ */
 
