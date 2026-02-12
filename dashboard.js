@@ -1026,6 +1026,78 @@ async function loadScoringProfile() {
   scoringProfile = data || null;
 }
 
+// --- Profile Settings ---
+
+function openProfileSettings() {
+  const modal = $('profileModalOverlay');
+  if (!modal) return;
+
+  // Populate fields from current profile
+  const profile = scoringProfile || {};
+  $('profileCompanyDesc').value = profile.company_profile || '';
+  $('profilePositiveKw').value = (profile.positive_keywords || []).join(', ');
+  $('profileNegativeKw').value = (profile.negative_keywords || []).join(', ');
+  $('profileBaseScore').value = profile.score_weights?.base ?? 50;
+  $('profilePosBonus').value = profile.score_weights?.positive_bonus ?? 5;
+  $('profileNegPenalty').value = profile.score_weights?.negative_penalty ?? 15;
+
+  modal.style.display = 'flex';
+}
+window.openProfileSettings = openProfileSettings;
+
+function closeProfileSettings() {
+  const modal = $('profileModalOverlay');
+  if (modal) modal.style.display = 'none';
+}
+window.closeProfileSettings = closeProfileSettings;
+
+async function saveProfileSettings() {
+  const companyProfile = $('profileCompanyDesc').value.trim();
+  const positiveKw = $('profilePositiveKw').value.split(',').map(s => s.trim()).filter(Boolean);
+  const negativeKw = $('profileNegativeKw').value.split(',').map(s => s.trim()).filter(Boolean);
+  const base = parseInt($('profileBaseScore').value) || 50;
+  const posBonus = parseInt($('profilePosBonus').value) || 5;
+  const negPenalty = parseInt($('profileNegPenalty').value) || 15;
+
+  const profileData = {
+    user_id: currentUser.id,
+    name: 'default',
+    is_default: true,
+    company_profile: companyProfile || null,
+    positive_keywords: positiveKw,
+    negative_keywords: negativeKw,
+    score_weights: { base, positive_bonus: posBonus, negative_penalty: negPenalty },
+    updated_at: new Date().toISOString(),
+  };
+
+  let error;
+  if (scoringProfile?.id) {
+    // Update existing
+    ({ error } = await sb.from('scoring_profiles')
+      .update(profileData)
+      .eq('id', scoringProfile.id));
+  } else {
+    // Insert new
+    ({ error } = await sb.from('scoring_profiles')
+      .insert(profileData));
+  }
+
+  if (error) {
+    console.error('Failed to save profile:', error);
+    alert('Failed to save profile: ' + (error.message || 'Unknown error'));
+    return;
+  }
+
+  // Reload profile and re-score
+  await loadScoringProfile();
+  closeProfileSettings();
+  showDDToast('Profile saved');
+
+  // Re-render scanner with new scoring
+  if (scannerInitialized) await loadFilteredOpportunities(0);
+}
+window.saveProfileSettings = saveProfileSettings;
+
 // --- Client-side scoring ---
 
 function clientScore(opp, profile) {
@@ -1736,7 +1808,58 @@ function renderWinPlan(winPlanJson) {
     </div>`);
   }
 
+  if (plan.intel_updates?.length) {
+    sections.push(`<div class="win-section">
+      <div class="win-section-title"><i class="fas fa-bolt"></i> Intel Updates</div>
+      <ul>${plan.intel_updates.map(u => `<li>${escapeHtml(u)}</li>`).join('')}</ul>
+    </div>`);
+  }
+
   return sections.join('');
+}
+
+/**
+ * Refresh win plan after Intel Drop — merge new intel context into existing plan.
+ */
+async function refreshWinPlan(projectId, intelResult) {
+  // Fetch current project with win plan
+  const { data: project } = await sb.from('projects')
+    .select('win_plan_json, notice_id, notes')
+    .eq('id', projectId)
+    .single();
+  if (!project) return;
+
+  let plan = safeJsonParse(project.win_plan_json) || {};
+
+  // If project is linked to a scanner opportunity, rebuild from source
+  if (project.notice_id) {
+    const { data: opp } = await sb.from('scanner_opportunities')
+      .select('ai_summary, ai_reasons_json, ai_risks_json, ai_skillsets_json, ai_must_check_json, attachment_analysis_json')
+      .eq('notice_id', project.notice_id)
+      .single();
+    if (opp) {
+      const freshPlan = buildWinPlan(opp);
+      if (freshPlan) plan = { ...plan, ...freshPlan };
+    }
+  }
+
+  // Append intel summary to plan
+  const summary = intelResult?.summary;
+  if (summary) {
+    if (!plan.intel_updates) plan.intel_updates = [];
+    const timestamp = new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+    plan.intel_updates.push(`[${timestamp}] ${summary}`);
+  }
+
+  // Append notes context if intel added notes
+  if (intelResult?.changes_applied?.notes_appended && project.notes) {
+    plan.latest_notes = project.notes.split('---').pop().trim().slice(0, 500);
+  }
+
+  // Save updated plan
+  await sb.from('projects')
+    .update({ win_plan_json: JSON.stringify(plan) })
+    .eq('id', projectId);
 }
 
 window.trackOpportunity = trackOpportunity;
@@ -2849,6 +2972,9 @@ async function submitIntel(projectId) {
     clearIntelFile(projectId);
 
     showDDToast('Intel processed successfully');
+
+    // Update win plan with intel context
+    await refreshWinPlan(projectId, result);
 
     // Reload projects to reflect changes
     await loadProjects();
