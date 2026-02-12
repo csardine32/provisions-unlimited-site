@@ -1914,18 +1914,20 @@ function pursueAdhocUnmatched(id) {
   $('formOwner').value = 'Chris';
   $('formPriority').value = 'normal';
 
-  // Pre-fill deadline from extracted response_deadline, fallback to 30 days out
-  const dlSource = parsed.response_deadline ? new Date(parsed.response_deadline) : null;
-  const dl = dlSource && !isNaN(dlSource.getTime()) ? dlSource : new Date(Date.now() + 30 * 86400000);
-  const dlOffset = dl.getTimezoneOffset();
-  const dlLocal = new Date(dl.getTime() - dlOffset * 60000);
-  $('formDeadline').value = dlLocal.toISOString().slice(0, 16);
-
   // Build notes from analysis summary
   const notesParts = [];
   if (parsed.scope_of_work) notesParts.push('Scope: ' + parsed.scope_of_work);
   if (parsed.bid_readiness) notesParts.push('Bid Readiness: ' + parsed.bid_readiness);
   $('formNotes').value = notesParts.join('\n\n');
+
+  // Pre-fill deadline from extracted response_deadline, fallback to 30 days out
+  const dlSource = parsed.response_deadline ? new Date(parsed.response_deadline) : null;
+  const dl = dlSource && !isNaN(dlSource.getTime()) ? dlSource : new Date(Date.now() + 30 * 86400000);
+  const dlOffset = dl.getTimezoneOffset();
+  const dlLocal = new Date(dl.getTime() - dlOffset * 60000);
+  const dlValue = dlLocal.toISOString().slice(0, 16);
+  console.log('[Pursue] deadline:', parsed.response_deadline, '→', dlValue);
+  $('formDeadline').value = dlValue;
 
   $('milestonesSection').style.display = 'none';
   $('checklistSection').style.display = 'none';
