@@ -1904,6 +1904,114 @@ body.is-admin .admin-only { display: block; }
 }
 
 /* ============================================================
+   Project Documents (Files) Section
+   ============================================================ */
+
+.docs-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 20px;
+  cursor: pointer;
+  user-select: none;
+  border-top: 1px solid #f3f4f6;
+  transition: background 0.15s;
+}
+.docs-toggle:hover { background: #f9fafb; }
+.docs-toggle i.fa-folder-open { color: var(--primary-navy); font-size: 0.8rem; }
+.docs-toggle span {
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: #9ca3af;
+}
+.docs-toggle .docs-chevron {
+  margin-left: auto;
+  font-size: 0.65rem;
+  color: #9ca3af;
+  transition: transform 0.2s;
+}
+.docs-toggle.expanded .docs-chevron {
+  transform: rotate(90deg);
+}
+.docs-body {
+  display: none;
+  padding: 0 20px 16px;
+}
+.docs-body.visible { display: block; }
+.docs-list { margin-bottom: 10px; }
+.doc-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 0;
+  font-size: 0.82rem;
+  color: var(--text-dark);
+}
+.doc-item i {
+  color: #6b7280;
+  font-size: 0.9rem;
+  width: 16px;
+  text-align: center;
+  flex-shrink: 0;
+}
+.doc-item i.fa-file-pdf { color: #dc2626; }
+.doc-item i.fa-file-code { color: #2563eb; }
+.doc-item i.fa-file-word { color: #2563eb; }
+.doc-item i.fa-file-image { color: #059669; }
+.doc-item a {
+  color: var(--primary-navy);
+  text-decoration: none;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 200px;
+}
+.doc-item a:hover { text-decoration: underline; }
+.doc-size {
+  font-size: 0.7rem;
+  color: #9ca3af;
+  margin-left: auto;
+  flex-shrink: 0;
+}
+.doc-delete-btn {
+  background: none;
+  border: none;
+  color: #d1d5db;
+  cursor: pointer;
+  padding: 2px 4px;
+  font-size: 0.7rem;
+  flex-shrink: 0;
+  transition: color 0.15s;
+}
+.doc-delete-btn:hover { color: var(--accent-red); }
+.docs-empty {
+  font-size: 0.8rem;
+  color: #9ca3af;
+  font-style: italic;
+  margin-bottom: 10px;
+}
+.docs-upload-zone {
+  border: 2px dashed #d1d5db;
+  border-radius: 8px;
+  padding: 14px;
+  text-align: center;
+  cursor: pointer;
+  transition: all 0.2s;
+  color: #9ca3af;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+.docs-upload-zone:hover, .docs-upload-zone.drag-over {
+  border-color: var(--primary-navy);
+  background: #eff6ff;
+  color: var(--primary-navy);
+}
+.docs-upload-zone i { margin-right: 6px; }
+
+/* ============================================================
    Intel Drop Section
    ============================================================ */
 

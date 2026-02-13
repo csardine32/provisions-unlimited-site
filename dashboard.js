@@ -39,6 +39,8 @@ let scoringProfile = null;    // per-user scoring profile from Supabase
 let scannerPage = 0;          // current pagination page for scanner
 let scannerTotalCount = 0;    // total matching results from server
 let expandedWinPlan = {};     // track which project win plan sections are open
+let expandedDocs = {};        // track which project documents sections are open
+let docPendingFiles = {};     // per-project pending file uploads keyed by project ID
 
 // --- Standard milestone template (days before deadline) ---
 const MILESTONE_TEMPLATE = [
@@ -128,6 +130,8 @@ function showLogin() {
   expandedIntel = {};
   expandedActivity = {};
   expandedWinPlan = {};
+  expandedDocs = {};
+  docPendingFiles = {};
   scoringProfile = null;
   scannerPage = 0;
   scannerTotalCount = 0;
@@ -204,7 +208,8 @@ async function loadProjects() {
     .select(`
       *,
       milestones ( * ),
-      checklist_items ( * )
+      checklist_items ( * ),
+      project_documents ( * )
     `)
     .in('status', ['active', 'submitted'])
     .order('response_deadline', { ascending: true });
@@ -232,7 +237,8 @@ async function loadAwardedProjects() {
     .select(`
       *,
       milestones ( * ),
-      checklist_items ( * )
+      checklist_items ( * ),
+      project_documents ( * )
     `)
     .eq('status', 'won')
     .order('updated_at', { ascending: false });
@@ -376,6 +382,7 @@ function setupRealtimeSubscriptions() {
     .on('postgres_changes', { event: '*', schema: 'public', table: 'projects' }, () => { loadProjects(); if (activeProjectsInitialized) loadAwardedProjects(); })
     .on('postgres_changes', { event: '*', schema: 'public', table: 'milestones' }, () => { loadProjects(); if (activeProjectsInitialized) loadAwardedProjects(); })
     .on('postgres_changes', { event: '*', schema: 'public', table: 'checklist_items' }, () => { loadProjects(); if (activeProjectsInitialized) loadAwardedProjects(); })
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'project_documents' }, () => { loadProjects(); if (activeProjectsInitialized) loadAwardedProjects(); })
     .on('postgres_changes', { event: '*', schema: 'public', table: 'scanner_opportunities' }, () => loadFilteredOpportunities())
     .on('postgres_changes', { event: '*', schema: 'public', table: 'opportunity_feedback' }, () => {
       loadUserFeedback().then(() => loadFilteredOpportunities());
@@ -520,10 +527,39 @@ function renderProjects() {
 
         ${totalChecklist > 0 ? `
           <div class="card-section">
-            <div class="card-section-title">Documents (${completedChecklist}/${totalChecklist})</div>
+            <div class="card-section-title">Checklist (${completedChecklist}/${totalChecklist})</div>
             ${checklistHtml}
           </div>
         ` : ''}
+
+        <div class="docs-toggle ${expandedDocs[p.id] ? 'expanded' : ''}" onclick="toggleDocs('${p.id}')">
+          <i class="fas fa-folder-open"></i>
+          <span>Files${(p.project_documents || []).length > 0 ? ` (${(p.project_documents || []).length})` : ''}</span>
+          <i class="fas fa-chevron-right docs-chevron"></i>
+        </div>
+        <div class="docs-body ${expandedDocs[p.id] ? 'visible' : ''}" id="docsBody-${p.id}">
+          ${(p.project_documents || []).length > 0 ? `
+            <div class="docs-list">
+              ${(p.project_documents || []).map((d) => {
+                const ext = (d.filename || '').split('.').pop().toLowerCase();
+                const icon = { pdf: 'fa-file-pdf', html: 'fa-file-code', md: 'fa-file-alt', docx: 'fa-file-word', doc: 'fa-file-word', png: 'fa-file-image', jpg: 'fa-file-image', jpeg: 'fa-file-image' }[ext] || 'fa-file';
+                const sizeKb = d.file_size_bytes ? (d.file_size_bytes / 1024).toFixed(0) + ' KB' : '';
+                return `
+                  <div class="doc-item">
+                    <i class="fas ${icon}"></i>
+                    <a href="#" onclick="downloadProjectDoc('${d.storage_path}', '${escapeHtml(d.filename)}'); return false;">${escapeHtml(d.filename)}</a>
+                    ${sizeKb ? `<span class="doc-size">${sizeKb}</span>` : ''}
+                    <button class="doc-delete-btn" onclick="deleteProjectDoc('${d.id}', '${d.storage_path}')" title="Delete"><i class="fas fa-times"></i></button>
+                  </div>
+                `;
+              }).join('')}
+            </div>
+          ` : '<div class="docs-empty">No files uploaded yet</div>'}
+          <div class="docs-upload-zone" id="docsDropZone-${p.id}">
+            <i class="fas fa-cloud-upload-alt"></i> Drop file or click to upload
+          </div>
+          <div class="doc-file-name" id="docFileName-${p.id}" style="display:none;"></div>
+        </div>
 
         ${p.win_plan_json ? `
         <div class="win-plan-toggle ${expandedWinPlan[p.id] ? 'expanded' : ''}" onclick="toggleWinPlan('${p.id}')">
@@ -568,6 +604,10 @@ function renderProjects() {
   // Re-setup drop zones for expanded intel sections
   for (const pid of Object.keys(expandedIntel)) {
     if (expandedIntel[pid]) setupIntelDropZone(pid);
+  }
+  // Re-setup drop zones for expanded docs sections
+  for (const pid of Object.keys(expandedDocs)) {
+    if (expandedDocs[pid]) setupDocsDropZone(pid);
   }
   // Re-load activity for expanded sections
   for (const pid of Object.keys(expandedActivity)) {
@@ -3040,6 +3080,145 @@ window.undismissAdhocAnalysis = undismissAdhocAnalysis;
 window.pursueAdhocMatched = pursueAdhocMatched;
 window.pursueAdhocUnmatched = pursueAdhocUnmatched;
 window.showDismissedAnalyses = showDismissedAnalyses;
+
+// ============================================================
+// Project Documents (Files)
+// ============================================================
+
+function toggleDocs(projectId) {
+  expandedDocs[projectId] = !expandedDocs[projectId];
+  const toggle = document.querySelector(`[onclick="toggleDocs('${projectId}')"]`);
+  const body = document.getElementById('docsBody-' + projectId);
+  if (toggle) toggle.classList.toggle('expanded', expandedDocs[projectId]);
+  if (body) body.classList.toggle('visible', expandedDocs[projectId]);
+  if (expandedDocs[projectId]) setupDocsDropZone(projectId);
+}
+window.toggleDocs = toggleDocs;
+
+function setupDocsDropZone(projectId) {
+  const dropZone = document.getElementById('docsDropZone-' + projectId);
+  if (!dropZone || dropZone.dataset.initialized) return;
+  dropZone.dataset.initialized = 'true';
+
+  const fileInput = document.createElement('input');
+  fileInput.type = 'file';
+  fileInput.accept = '.pdf,.html,.md,.docx,.doc,.png,.jpg,.jpeg,.txt,.csv,.xlsx';
+  fileInput.style.display = 'none';
+  dropZone.appendChild(fileInput);
+
+  dropZone.addEventListener('click', () => fileInput.click());
+  dropZone.addEventListener('dragover', (e) => { e.preventDefault(); dropZone.classList.add('drag-over'); });
+  dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
+  dropZone.addEventListener('drop', (e) => {
+    e.preventDefault();
+    dropZone.classList.remove('drag-over');
+    if (e.dataTransfer.files.length > 0) uploadProjectDoc(projectId, e.dataTransfer.files[0]);
+  });
+  fileInput.addEventListener('change', () => {
+    if (fileInput.files.length > 0) uploadProjectDoc(projectId, fileInput.files[0]);
+    fileInput.value = '';
+  });
+}
+
+async function uploadProjectDoc(projectId, file) {
+  if (file.size > 50 * 1024 * 1024) {
+    alert('File too large. Maximum size is 50 MB.');
+    return;
+  }
+
+  const dropZone = document.getElementById('docsDropZone-' + projectId);
+  const fileNameEl = document.getElementById('docFileName-' + projectId);
+  if (dropZone) {
+    dropZone.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Uploading...';
+    dropZone.style.pointerEvents = 'none';
+  }
+
+  try {
+    const storagePath = `${projectId}/${Date.now()}-${file.name}`;
+    const { error: uploadError } = await sb.storage
+      .from('project-documents')
+      .upload(storagePath, file, { contentType: file.type });
+
+    if (uploadError) throw uploadError;
+
+    // Insert metadata row
+    const session = await sb.auth.getSession();
+    const userId = session?.data?.session?.user?.id || null;
+    const { error: insertError } = await sb.from('project_documents').insert({
+      project_id: projectId,
+      filename: file.name,
+      storage_path: storagePath,
+      mime_type: file.type || 'application/octet-stream',
+      file_size_bytes: file.size,
+      uploaded_by: userId,
+    });
+
+    if (insertError) throw insertError;
+
+    // Reload to show new file
+    await loadProjects();
+  } catch (err) {
+    console.error('Upload failed:', err);
+    alert('Upload failed: ' + (err.message || 'Unknown error'));
+  } finally {
+    if (dropZone) {
+      dropZone.innerHTML = '<i class="fas fa-cloud-upload-alt"></i> Drop file or click to upload';
+      dropZone.style.pointerEvents = '';
+      dropZone.dataset.initialized = '';
+    }
+  }
+}
+window.uploadProjectDoc = uploadProjectDoc;
+
+async function downloadProjectDoc(storagePath, filename) {
+  try {
+    const { data, error } = await sb.storage
+      .from('project-documents')
+      .download(storagePath);
+
+    if (error) throw error;
+
+    const url = URL.createObjectURL(data);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  } catch (err) {
+    console.error('Download failed:', err);
+    alert('Download failed: ' + (err.message || 'Unknown error'));
+  }
+}
+window.downloadProjectDoc = downloadProjectDoc;
+
+async function deleteProjectDoc(docId, storagePath) {
+  if (!confirm('Delete this file?')) return;
+
+  try {
+    // Delete from storage
+    const { error: storageError } = await sb.storage
+      .from('project-documents')
+      .remove([storagePath]);
+
+    if (storageError) console.warn('Storage delete warning:', storageError);
+
+    // Delete metadata row
+    const { error: dbError } = await sb
+      .from('project_documents')
+      .delete()
+      .eq('id', docId);
+
+    if (dbError) throw dbError;
+
+    await loadProjects();
+  } catch (err) {
+    console.error('Delete failed:', err);
+    alert('Delete failed: ' + (err.message || 'Unknown error'));
+  }
+}
+window.deleteProjectDoc = deleteProjectDoc;
 
 // ============================================================
 // Intel Drop
